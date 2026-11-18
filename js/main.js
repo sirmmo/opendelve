@@ -209,6 +209,14 @@ function react(events) {
 
 // ---------- HUD ----------
 
+// Tell the view how much of the screen the HUD covers at the top and the bottom.
+function insets() {
+  if ($('hud').hidden) return;
+  const top = Math.max($('scorecard').getBoundingClientRect().bottom, $('charters').getBoundingClientRect().bottom);
+  view.setInsets(top, window.innerHeight - $('hand').getBoundingClientRect().top);
+}
+window.addEventListener('resize', insets);
+
 function hud() {
   $('score').textContent = state.score;
   $('supply').textContent = state.supply;
@@ -228,6 +236,7 @@ function hud() {
   }
   $('seedLabel').textContent = state.seed;
   $('best').textContent = store.get(PREFIX + 'best') || 0;
+  insets();
 }
 
 function bump(id) {
@@ -605,6 +614,9 @@ async function boot() {
   else startGame(urlSeed || randomSeed());
   $('loading').hidden = true;
   $('hud').hidden = false;
+  insets();
+  view.shift = view.shiftGoal;
+  view.applyShift();
   if (!store.get(PREFIX + 'seenHelp')) $('help').hidden = false;
   view.start();
   window.__opendelve = { get state() { return state; }, view, R, placeOption, rotate, CELL, PIECES, importOPD, exportOPD, toGeoJSON, importFile };
