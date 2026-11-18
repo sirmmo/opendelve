@@ -24,7 +24,15 @@
       <div class="stat"><span class="lbl">Pieces</span><b id="supply">0</b></div>
     </div>
     <div id="charters"></div>
+    <div id="lore" class="card" hidden>
+      <button id="loreHead" aria-expanded="false"><span class="seal">Map</span><b id="loreTitle"></b><span class="chev">▾</span></button>
+      <div id="loreBody" hidden>
+        <p id="loreStory"></p>
+        <ol id="loreNotes"></ol>
+      </div>
+    </div>
   </div>
+  <div id="noteLabels"></div>
 
   <div id="topright">
     <button class="icon" id="bUndo" title="Undo (Z)" aria-label="Undo">↶</button>
@@ -60,6 +68,7 @@
       <li><b>Finish rooms.</b> When every door of a room leads somewhere, it gets furnished: a <i>storeroom</i>, <i>guardroom</i>, <i>armoury</i>, <i>crypt</i> or <i>great hall</i>. Rooms finished from depth 9 down also hold <i>treasure</i>.</li>
       <li><b>Delve deep.</b> Depth is the number of pieces between a room and the stairs. Reaching a new depth is worth glory, and doors that join the same style (stone or cave) are worth more.</li>
       <li><b>Finished rooms and quests bring new pieces.</b> When the last piece is laid, the delve is over.</li>
+      <li><b>Bring your own map.</b> From the menu, import a map made with <a href="https://watabou.github.io/one-page-dungeon/" target="_blank" rel="noopener">One Page Dungeon</a> and dig on from it: doors laid against its old walls break through.</li>
     </ol>
     <div class="controls">
       <div><b>Mouse</b> · click a glowing square to lay · <kbd>R</kbd> or right click for the next way it fits · drag to move · right drag to rotate the view · wheel to zoom</div>
@@ -79,6 +88,12 @@
     <button class="btn alt" id="bDaily">Today's dungeon</button>
     <button class="btn alt" id="bRestart">Restart this dungeon</button>
     <button class="btn alt" id="bShare">Copy link to this dungeon</button>
+    <h3>Maps</h3>
+    <button class="btn alt" id="bImport">Import a One Page Dungeon map…</button>
+    <button class="btn alt" id="bExportOPD">Export as One Page Dungeon JSON</button>
+    <button class="btn alt" id="bGeo">Download map (GeoJSON)</button>
+    <p class="hint">Make a map at <a href="https://watabou.github.io/one-page-dungeon/" target="_blank" rel="noopener">One Page Dungeon</a>, press <kbd>J</kbd> there to save its JSON, then import it here (or drop the file on the page) and dig on from its entrance.</p>
+    <input type="file" id="fileOPD" accept=".json,application/json" hidden>
     <p class="best">Best glory: <b id="best">0</b></p>
     <button class="btn ghost" id="bMenuClose">Back</button>
   </div>
@@ -92,6 +107,8 @@
     <ul id="finalStats"></ul>
     <button class="btn" id="bOverNew">New dungeon</button>
     <button class="btn alt" id="bOverRestart">Dig this seed again</button>
+    <button class="btn alt" id="bOverOPD">Export as One Page Dungeon JSON</button>
+    <button class="btn alt" id="bOverGeo">Download map (GeoJSON)</button>
     <button class="btn ghost" id="bOverLook">Look at the dungeon</button>
   </div>
 </div>

@@ -5,7 +5,8 @@
 import * as THREE from 'three';
 import { GLTFLoader } from '../vendor/jsm/loaders/GLTFLoader.js';
 import { PIECES } from './pieces.js';
-import { layout, pieceDoors, pieceAt, depths, DX, DY, key } from './rules.js';
+import { layout, shapeOf, pieceDoors, pieceAt, depths, DX, DY, key } from './rules.js';
+import { DOOR } from './opd.js';
 
 export const CELL = 2; // world units per grid cell (models are 4 units per cell)
 const MODEL_SCALE = CELL / 4;
@@ -17,7 +18,7 @@ const KIT = ['corridor', 'corridor-corner', 'corridor-junction', 'corridor-inter
   'room-large-variation', 'gate', 'gate-metal-bars', 'stairs'];
 const PROPS = ['banner', 'barrel', 'chair', 'character-human', 'character-orc', 'chest', 'coin', 'column', 'pot',
   'potion', 'rocks', 'stones', 'table', 'trap', 'weapon-spear', 'weapon-sword', 'shield-round',
-  'shield-rectangle', 'wood-support', 'key'];
+  'shield-rectangle', 'wood-support', 'key', 'stairs'];
 
 function prng(seed) {
   let s = (seed >>> 0) || 1;
@@ -34,6 +35,19 @@ export function pieceCenter(kind, rot, x, y) {
   const L = layout(kind, rot);
   return new THREE.Vector3((x + L.w / 2) * CELL, 0, (y + L.h / 2) * CELL);
 }
+
+export function centerOf(p) {
+  const L = shapeOf(p);
+  return new THREE.Vector3((p.x + L.w / 2) * CELL, 0, (p.y + L.h / 2) * CELL);
+}
+
+// Imported ruins are drawn from their cells: old stone floor, walls wherever the floor ends.
+const RUIN_WALL = { h: 1.7, t: 0.32 };
+const ruinFloorGeo = new THREE.BoxGeometry(CELL, 0.1, CELL);
+const ruinWallGeo = new THREE.BoxGeometry(CELL + RUIN_WALL.t, RUIN_WALL.h, RUIN_WALL.t);
+const ruinFloorMat = new THREE.MeshStandardMaterial({ color: 0x9c7a63, roughness: 1 });
+const ruinFloorAlt = new THREE.MeshStandardMaterial({ color: 0x92715b, roughness: 1 });
+const ruinWallMat = new THREE.MeshStandardMaterial({ color: 0x7f7898, roughness: 0.95 });
 
 // ---------- furniture ----------
 // Positions are in the piece's own unturned frame, in world units from its centre.
@@ -143,7 +157,8 @@ export class View {
     this.board = new THREE.Group();
     this.gates = new THREE.Group();
     this.markers = new THREE.Group();
-    this.scene.add(this.board, this.gates, this.markers);
+    this.lore = new THREE.Group();
+    this.scene.add(this.board, this.gates, this.markers, this.lore);
     this.views = new Map();
     this.anims = [];
     this.templates = {};
@@ -157,6 +172,7 @@ export class View {
 
     this.markerGeo = new THREE.PlaneGeometry(CELL * 0.86, CELL * 0.86).rotateX(-Math.PI / 2);
     this.markerMat = new THREE.MeshBasicMaterial({ color: 0xffcf6b, transparent: true, opacity: 0.25, depthWrite: false });
+    this.markerDim = new THREE.MeshBasicMaterial({ color: 0xffcf6b, transparent: true, opacity: 0.09, depthWrite: false });
     this.markerHot = new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.6, depthWrite: false });
     const h = CELL * 0.43;
     this.ringGeo = new THREE.BufferGeometry().setFromPoints([
@@ -200,8 +216,59 @@ export class View {
     return t.clone(true);
   }
 
+  ruinGroup(p) {
+    const g = new THREE.Group();
+    const L = p.shape;
+    const open = new Set(L.doors.map(([x, y, d]) => `${x},${y},${d}`));
+    const mine = new Set(L.cells.map(([x, y]) => `${x},${y}`));
+    for (const [cx, cy] of L.cells) {
+      const f = new THREE.Mesh(ruinFloorGeo, (p.x + cx + p.y + cy) % 2 ? ruinFloorMat : ruinFloorAlt);
+      f.position.set((cx + 0.5) * CELL, 0.05, (cy + 0.5) * CELL);
+      f.receiveShadow = true;
+      g.add(f);
+      for (let d = 0; d < 4; d++) {
+        if (open.has(`${cx},${cy},${d}`) || mine.has(`${cx + DX[d]},${cy + DY[d]}`)) continue;
+        const w = new THREE.Mesh(ruinWallGeo, ruinWallMat);
+        const off = CELL / 2 - RUIN_WALL.t / 2;
+        w.position.set((cx + 0.5) * CELL + DX[d] * off, RUIN_WALL.h / 2, (cy + 0.5) * CELL + DY[d] * off);
+        if (d % 2 === 0) w.rotation.y = Math.PI / 2;
+        w.castShadow = true;
+        w.receiveShadow = true;
+        g.add(w);
+      }
+    }
+    const prop = (name, x, z, ry = 0, s = 1) => {
+      const o = this.model(name);
+      o.scale.setScalar(PROP_SCALE * s);
+      o.position.set(x, 0.1, z);
+      o.rotation.y = ry;
+      g.add(o);
+    };
+    if (p.door) {
+      const t = p.door.type;
+      const along = p.door.dir.x !== 0; // passage runs east-west
+      if (t !== DOOR.SECRET && t !== DOOR.EMPTY) {
+        const gate = this.model(`dungeon/${t === DOOR.PORTCULLIS || t === DOOR.BARRED ? 'gate-metal-bars' : 'gate'}`);
+        gate.scale.setScalar(MODEL_SCALE * 0.92);
+        gate.position.set(CELL / 2, 0, CELL / 2);
+        gate.rotation.y = along ? Math.PI / 2 : 0;
+        g.add(gate);
+      }
+      if (t === DOOR.STAIRS || t === DOOR.STEPS || t === DOOR.EXIT) prop('stairs', CELL / 2, CELL / 2, along ? Math.PI / 2 : 0, 0.9);
+    }
+    if (p.rect?.ending) {
+      prop('chest', (L.w / 2) * CELL, (L.h / 2) * CELL - 0.3, 0);
+      prop('coin', (L.w / 2) * CELL + 0.7, (L.h / 2) * CELL + 0.2, 0.5, 0.8);
+    }
+    if (p.rect?.rotunda) prop('column', (L.w / 2) * CELL, (L.h / 2) * CELL);
+    g.userData.top = new THREE.Group();
+    g.position.set(p.x * CELL, 0, p.y * CELL);
+    return g;
+  }
+
   // A piece's group, centred on its footprint, turned.
   pieceGroup(p, extras = []) {
+    if (p.kind === 'ruin') return this.ruinGroup(p);
     const name = `${p.style}/${PIECES[p.kind].model}`;
     const g = new THREE.Group();
     const inner = new THREE.Group();
@@ -230,7 +297,7 @@ export class View {
     for (const p of Object.values(state.pieces)) {
       const k = String(p.id);
       seen.add(k);
-      const vis = [p.kind, p.style, p.rot, p.x, p.y, p.done, p.treasure].join('|');
+      const vis = [p.kind, p.style, p.rot, p.x, p.y, p.done, p.treasure, p.shape?.doors.length].join('|');
       const cur = this.views.get(k);
       if (cur && cur.vis === vis) continue;
       const R = prng(p.v * 7919 + 13);
@@ -252,6 +319,7 @@ export class View {
       }
     }
     this.syncGates(state);
+    this.syncLore(state);
   }
 
   // An arch in every joined doorway that leads into a room; bars on treasure rooms.
@@ -277,10 +345,26 @@ export class View {
     }
   }
 
+  // Columns from an imported map.
+  syncLore(state) {
+    const k = state.opd ? state.seed : '';
+    if (this.loreKey === k) return;
+    this.loreKey = k;
+    this.lore.clear();
+    for (const c of state.opd?.columns || []) {
+      const o = this.model('column');
+      o.scale.setScalar(PROP_SCALE);
+      o.position.set(c.x * CELL, 0.1, c.y * CELL);
+      this.lore.add(o);
+    }
+  }
+
   clear() {
     for (const v of this.views.values()) this.board.remove(v.group);
     this.views.clear();
     this.gates.clear();
+    this.lore.clear();
+    this.loreKey = null;
   }
 
   drop(g) {
@@ -308,10 +392,11 @@ export class View {
     this.markers.clear();
     for (const s of spots) {
       const isHot = hot && hot.x === s.x && hot.y === s.y;
-      const m = new THREE.Mesh(this.markerGeo, isHot ? this.markerHot : this.markerMat);
+      const m = new THREE.Mesh(this.markerGeo, isHot ? this.markerHot : s.breach ? this.markerDim : this.markerMat);
       m.position.set((s.x + 0.5) * CELL, 0.03, (s.y + 0.5) * CELL);
       m.renderOrder = 1;
       this.markers.add(m);
+      if (s.breach && !isHot) continue;
       const line = new THREE.LineLoop(this.ringGeo, this.ringMat);
       line.position.copy(m.position);
       this.markers.add(line);
@@ -389,7 +474,7 @@ export class View {
   frame(state) {
     const box = new THREE.Box3();
     for (const p of Object.values(state.pieces)) {
-      const L = layout(p.kind, p.rot);
+      const L = shapeOf(p);
       box.expandByPoint(new THREE.Vector3(p.x * CELL, 0, p.y * CELL));
       box.expandByPoint(new THREE.Vector3((p.x + L.w) * CELL, 0, (p.y + L.h) * CELL));
     }

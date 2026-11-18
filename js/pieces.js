@@ -26,6 +26,9 @@ export const PIECES = {
 
   // The way in: stairs coming down from the surface, open to the north.
   stairs: { model: 'stairs', w: 1, h: 2, doors: [[0, 0, N]], room: null },
+
+  // Part of an imported One Page Dungeon map; its shape is stored on the piece.
+  ruin: { model: null, w: 1, h: 1, doors: [], room: null },
 };
 
 export const STYLES = ['dungeon', 'cave'];

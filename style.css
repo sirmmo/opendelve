@@ -170,3 +170,28 @@ code { background: var(--paper-2); padding: 1px 6px; border-radius: 5px; }
   #hand .current { width: 112px; height: 112px; }
   #thumb0 { width: 104px; height: 104px; }
 }
+
+/* imported map */
+#lore { padding: 0; font-size: 14px; }
+#loreHead { display: flex; align-items: baseline; gap: 8px; width: 100%; background: none; border: 0; padding: 8px 12px; text-align: left; font-weight: 600; }
+#loreHead .seal { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--ink-soft); }
+#loreHead b { flex: 1; }
+#loreHead .chev { transition: transform .2s; }
+#loreHead[aria-expanded="true"] .chev { transform: rotate(180deg); }
+#loreBody { padding: 0 12px 10px; max-height: 40vh; overflow-y: auto; }
+#loreBody p { margin: 0 0 8px; font-size: 13px; line-height: 1.4; }
+#loreNotes { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.4; }
+#loreNotes li { margin-bottom: 4px; }
+#noteLabels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.note-label {
+  position: absolute; transform: translate(-50%, -50%); width: 24px; height: 24px; border-radius: 50%; background: var(--paper);
+  border: 2px solid var(--ink); font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, .4);
+}
+.sheet h3 { font-family: 'Cinzel', serif; margin: 18px 0 0; font-size: 18px; }
+.hint { font-size: 13px; color: var(--ink-soft); margin: 10px 0 0; line-height: 1.45; }
+.hint a { color: var(--blue-dark); }
+body.dragging::after {
+  content: 'Drop a One Page Dungeon map to import it'; position: fixed; inset: 12px; border: 4px dashed var(--gold); border-radius: 20px;
+  display: flex; align-items: center; justify-content: center; color: var(--paper); font-size: 24px; font-weight: 700; background: rgba(10, 8, 16, .6); z-index: 30;
+}

@@ -1,4 +1,6 @@
-import { View, CELL, pieceCenter } from './view.js';
+import { View, CELL, pieceCenter, centerOf } from './view.js';
+import { importOPD, exportOPD, isOPD } from './opd.js';
+import { toGeoJSON } from './geojson.js';
 import * as R from './rules.js';
 import { PIECES, ROOMS } from './pieces.js';
 
@@ -13,6 +15,7 @@ const view = new View($('scene'));
 let state = null;
 let undoJSON = null;
 let spots = new Map(); // "x,y" -> options for the current piece
+let breaches = new Set(); // spots that break through an old wall rather than meet a door
 let hover = null;
 let selected = null;
 let optIdx = 0;
@@ -32,7 +35,9 @@ function todaySeed() {
 }
 function setURL(seed) {
   const u = new URL(location.href);
-  u.searchParams.set('seed', seed);
+  // An imported map can't be rebuilt from a seed, so don't offer one.
+  if (state?.opd) u.searchParams.delete('seed');
+  else u.searchParams.set('seed', seed);
   history.replaceState(null, '', u);
 }
 
@@ -70,14 +75,21 @@ function save() {
 function onTurn() {
   const piece = state.queue[0];
   spots = new Map();
-  if (piece) for (const s of R.legalSpots(state, piece)) spots.set(R.key(s.x, s.y), s.options);
+  breaches = new Set();
+  if (piece) {
+    for (const s of R.legalSpots(state, piece)) {
+      spots.set(R.key(s.x, s.y), s.options);
+      if (s.breach) breaches.add(R.key(s.x, s.y));
+    }
+  }
   lastCell = '';
   hud();
   refreshGhost();
   view.thumbs.draw($('thumb1'), state.queue[1], 0);
   view.thumbs.draw($('thumb2'), state.queue[2], 0);
   $('bUndo').disabled = !undoJSON;
-  if (state.over) setTimeout(showOver, 900);
+  if (state.over && !state.sealed) setTimeout(showOver, 900);
+  lore();
 }
 
 const target = () => (touchMode ? selected : hover);
@@ -116,7 +128,7 @@ function refreshGhost() {
   } else {
     tip.hidden = true;
   }
-  view.setSpots([...spots.keys()].map((s) => { const [x, y] = R.unkey(s); return { x, y }; }), c);
+  view.setSpots([...spots.keys()].map((s) => { const [x, y] = R.unkey(s); return { x, y, breach: breaches.has(s) }; }), c);
   $('bPlace').hidden = !(touchMode && selected && o);
   view.thumbs.draw($('thumb0'), piece, o ? o.rot : wantRot);
 }
@@ -173,8 +185,7 @@ function undo() {
 }
 
 function at(id) {
-  const p = state.pieces[id];
-  return pieceCenter(p.kind, p.rot, p.x, p.y);
+  return centerOf(state.pieces[id]);
 }
 
 function react(events) {
@@ -259,6 +270,11 @@ view.onFrame = (dt) => {
     f.el.style.left = p.x + 'px';
     f.el.style.top = p.y + 'px';
     f.el.style.opacity = k < 0.15 ? k / 0.15 : k > 0.7 ? (1 - k) / 0.3 : 1;
+  }
+  for (const el of noteEls) {
+    const p = view.toScreen(Number(el.dataset.x) * CELL, Number(el.dataset.y) * CELL, 0.4);
+    el.style.left = p.x + 'px';
+    el.style.top = p.y + 'px';
   }
   const o = currentOption();
   const tip = $('tip');
@@ -436,6 +452,116 @@ window.addEventListener('keydown', (e) => {
   e.preventDefault();
 });
 
+// ---------- maps: One Page Dungeon and GeoJSON ----------
+
+function download(name, obj, type) {
+  const blob = new Blob([JSON.stringify(obj, null, type === 'application/json' ? 0 : undefined)], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+const fileName = () => (state.opd ? state.opd.title : `opendelve-${state.seed}`).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+
+function exportMap() {
+  download(`${fileName()}.json`, exportOPD(state), 'application/json');
+}
+
+// ?origin=lon,lat places the dungeon on the globe (default 0,0).
+function exportGeo() {
+  const o = (new URLSearchParams(location.search).get('origin') || '').split(',').map(Number);
+  const origin = o.length === 2 && o.every(Number.isFinite) ? o : [0, 0];
+  download(`${fileName()}.geojson`, toGeoJSON(state, { origin }), 'application/geo+json');
+}
+
+async function importFile(file) {
+  if (!file) return;
+  let json;
+  try {
+    json = JSON.parse(await file.text());
+  } catch {
+    toast("That file isn't JSON");
+    return;
+  }
+  if (!isOPD(json)) {
+    toast("That isn't a One Page Dungeon map (it has no rects and doors)");
+    return;
+  }
+  state = importOPD(json);
+  undoJSON = null;
+  selected = null;
+  seenCharters = new Set(state.charters.map((c) => c.id));
+  $('menu').hidden = true;
+  $('over').hidden = true;
+  view.clear();
+  view.sync(state, { animate: false });
+  view.frame(state);
+  setURL(state.seed);
+  save();
+  onTurn();
+  toast(state.sealed ? `<b>${state.opd.title}</b> has no way out to dig from: have a look around` : `<b>${state.opd.title}</b> imported · dig on from its entrance`);
+  $('lore').querySelector('#loreHead').setAttribute('aria-expanded', 'true');
+  $('loreBody').hidden = false;
+}
+
+// The imported map's title, story and numbered notes.
+let noteEls = [];
+function lore() {
+  const o = state.opd;
+  $('lore').hidden = !o;
+  for (const el of noteEls) el.remove();
+  noteEls = [];
+  if (!o) return;
+  $('loreTitle').textContent = o.title;
+  $('loreStory').textContent = o.story;
+  $('loreNotes').innerHTML = '';
+  const notes = [...o.notes].sort((a, b) => (Number(a.ref) || 0) - (Number(b.ref) || 0));
+  for (const n of notes) {
+    const li = document.createElement('li');
+    li.value = Number(n.ref) || undefined;
+    li.textContent = n.text;
+    $('loreNotes').appendChild(li);
+    const el = document.createElement('div');
+    el.className = 'note-label';
+    el.textContent = n.ref;
+    el.dataset.x = n.pos.x;
+    el.dataset.y = n.pos.y;
+    $('noteLabels').appendChild(el);
+    noteEls.push(el);
+  }
+}
+
+$('loreHead').onclick = () => {
+  const open = $('loreBody').hidden;
+  $('loreBody').hidden = !open;
+  $('loreHead').setAttribute('aria-expanded', String(open));
+};
+$('bImport').onclick = () => $('fileOPD').click();
+$('fileOPD').onchange = (e) => {
+  importFile(e.target.files[0]);
+  e.target.value = '';
+};
+$('bExportOPD').onclick = exportMap;
+$('bOverOPD').onclick = exportMap;
+$('bGeo').onclick = exportGeo;
+$('bOverGeo').onclick = exportGeo;
+window.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  document.body.classList.add('dragging');
+});
+window.addEventListener('dragleave', (e) => {
+  if (!e.relatedTarget) document.body.classList.remove('dragging');
+});
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  document.body.classList.remove('dragging');
+  importFile(e.dataTransfer.files[0]);
+});
+
 // ---------- buttons ----------
 
 $('bRotL').onclick = () => rotate(-1);
@@ -475,13 +601,13 @@ async function boot() {
   const urlSeed = new URLSearchParams(location.search).get('seed');
   let saved = null;
   try { saved = JSON.parse(store.get(PREFIX + 'save') || 'null'); } catch { saved = null; }
-  if (saved && saved.version === 1 && !saved.over && (!urlSeed || saved.seed === urlSeed)) resume(saved, store.get(PREFIX + 'undo'));
+  if (saved && saved.version === 1 && (!saved.over || saved.sealed) && (!urlSeed || saved.seed === urlSeed)) resume(saved, store.get(PREFIX + 'undo'));
   else startGame(urlSeed || randomSeed());
   $('loading').hidden = true;
   $('hud').hidden = false;
   if (!store.get(PREFIX + 'seenHelp')) $('help').hidden = false;
   view.start();
-  window.__opendelve = { get state() { return state; }, view, R, placeOption, rotate, CELL, PIECES };
+  window.__opendelve = { get state() { return state; }, view, R, placeOption, rotate, CELL, PIECES, importOPD, exportOPD, toGeoJSON, importFile };
 }
 
 boot().catch((err) => {

@@ -1,0 +1,24 @@
+{
+  "version": "1.2.7",
+  "title": "Little Crypt of the Test Suite",
+  "story": "A hand-made map in the One Page Dungeon format, for the tests.",
+  "rects": [
+    { "x": 1, "y": 0, "w": 3, "h": 1 },
+    { "x": 5, "y": -1, "w": 3, "h": 3 },
+    { "x": 5, "y": 3, "w": 3, "h": 2, "ending": true },
+    { "x": 0, "y": 0, "w": 1, "h": 1 },
+    { "x": 4, "y": 0, "w": 1, "h": 1 },
+    { "x": 6, "y": 2, "w": 1, "h": 1 }
+  ],
+  "doors": [
+    { "x": 0, "y": 0, "dir": { "x": 1, "y": 0 }, "type": 3 },
+    { "x": 4, "y": 0, "dir": { "x": 1, "y": 0 }, "type": 1 },
+    { "x": 6, "y": 2, "dir": { "x": 0, "y": 1 }, "type": 4 }
+  ],
+  "notes": [
+    { "text": "A dusty altar.", "ref": "1", "pos": { "x": 6.5, "y": 0.5 } },
+    { "text": "The sealed tomb.", "ref": "2", "pos": { "x": 6.5, "y": 4 } }
+  ],
+  "columns": [{ "x": 5.5, "y": -0.5 }, { "x": 7.5, "y": -0.5 }],
+  "water": []
+}

@@ -58,12 +58,17 @@ export function layout(kind, rot) {
   return out;
 }
 
+// Imported pieces (ruins from a One Page Dungeon map) carry their own shape.
+export function shapeOf(p) {
+  return p.shape || layout(p.kind, p.rot);
+}
+
 export function pieceCells(p) {
-  return layout(p.kind, p.rot).cells.map(([x, y]) => [p.x + x, p.y + y]);
+  return shapeOf(p).cells.map(([x, y]) => [p.x + x, p.y + y]);
 }
 
 export function pieceDoors(p) {
-  return layout(p.kind, p.rot).doors.map(([x, y, d]) => [p.x + x, p.y + y, d]);
+  return shapeOf(p).doors.map(([x, y, d]) => [p.x + x, p.y + y, d]);
 }
 
 function hasDoor(p, x, y, d) {
@@ -76,9 +81,19 @@ export function pieceAt(state, x, y) {
 }
 
 // Doors that open onto empty rock: where the dungeon can grow.
+// Ruins (pieces of an imported map) can also be broken into: every wall of theirs that faces
+// rock counts as a way in.
 export function freePorts(state) {
   const out = [];
   for (const p of Object.values(state.pieces)) {
+    if (p.kind === 'ruin') {
+      for (const [x, y] of pieceCells(p)) {
+        for (let d = 0; d < 4; d++) {
+          if (!state.cells[key(x + DX[d], y + DY[d])]) out.push({ x: x + DX[d], y: y + DY[d], from: p.id, breach: !hasDoor(p, x, y, d) });
+        }
+      }
+      continue;
+    }
     for (const [x, y, d] of pieceDoors(p)) {
       const nx = x + DX[d];
       const ny = y + DY[d];
@@ -100,6 +115,7 @@ export function check(state, kind, rot, ax, ay, freeBefore) {
   }
   const myDoors = new Set(L.doors.map(([x, y, d]) => `${ax + x},${ay + y},${d}`));
   const links = [];
+  const breaches = [];
   let openToRock = 0;
   for (const [x0, y0] of L.cells) {
     const x = ax + x0;
@@ -114,12 +130,20 @@ export function check(state, kind, rot, ax, ay, freeBefore) {
         if (open) openToRock++;
         continue;
       }
-      if (open !== hasDoor(other, nx, ny, (d + 2) % 4)) return null;
+      const theirs = hasDoor(other, nx, ny, (d + 2) % 4);
+      if (open && !theirs && other.kind === 'ruin') {
+        // A door laid against a ruin wall breaks through it.
+        links.push(other.id);
+        breaches.push([nx, ny, (d + 2) % 4, other.id]);
+        continue;
+      }
+      if (open !== theirs) return null;
       if (open) links.push(other.id);
     }
   }
   if (!links.length) return null;
   if (freeBefore !== undefined && state.supply > 1 && freeBefore - links.length + openToRock <= 0) return null;
+  links.breaches = breaches;
   return links;
 }
 
@@ -150,12 +174,13 @@ export function legalSpots(state, piece) {
   const free = ports.length;
   const done = new Set();
   const out = [];
+  const doorway = new Set(ports.filter((p) => !p.breach).map((p) => key(p.x, p.y)));
   for (const p of ports) {
     const k = key(p.x, p.y);
     if (done.has(k)) continue;
     done.add(k);
     const options = optionsAt(state, piece, p.x, p.y, free);
-    if (options.length) out.push({ x: p.x, y: p.y, options });
+    if (options.length) out.push({ x: p.x, y: p.y, options, ...(doorway.has(k) ? {} : { breach: true }) });
   }
   return out;
 }
@@ -180,6 +205,7 @@ export function isFinished(state, p) {
 
 // Steps from the stairs, through joined doors.
 export function depths(state) {
+  if (!state.pieces[state.entrance]) return {};
   const out = { [state.entrance]: 0 };
   const queue = [state.pieces[state.entrance]];
   while (queue.length) {
@@ -232,8 +258,8 @@ export function countTreasure(state) {
 
 // ---------- new game ----------
 
-export function newGame(seed = String(Date.now() % 1e9)) {
-  const state = {
+export function emptyGame(seed = String(Date.now() % 1e9)) {
+  return {
     version: 1,
     seed: String(seed),
     rng: hashSeed(seed),
@@ -252,7 +278,23 @@ export function newGame(seed = String(Date.now() % 1e9)) {
     over: false,
     stats: { placed: 0, discarded: 0, rooms: 0, treasure: 0, charters: 0 },
   };
+}
+
+export function newGame(seed = String(Date.now() % 1e9)) {
+  const state = emptyGame(seed);
   addPiece(state, { kind: 'stairs', style: 'dungeon', v: 7 }, 0, 0, 0);
+  return finishSetup(state);
+}
+
+// Deals the first hand and quests once the starting pieces are down.
+export function finishSetup(state) {
+  state.maxDepth = Math.max(0, ...Object.values(depths(state)));
+  if (!freePorts(state).length) {
+    // Nothing to dig from (an imported map with no way out): look, don't play.
+    state.sealed = true;
+    state.over = true;
+    return state;
+  }
   refill(state);
   for (const kind of ['depth', 'rooms', 'cave']) state.charters.push(makeCharter(state, kind));
   return state;
@@ -291,6 +333,11 @@ export function place(state, rot, x, y) {
   if (!links) return null;
   const events = [];
   const p = addPiece(state, piece, rot, x, y);
+  for (const [bx, by, bd, id] of links.breaches || []) {
+    const ruin = state.pieces[id];
+    ruin.shape.doors.push([bx - ruin.x, by - ruin.y, bd]);
+    events.push({ type: 'breach', id });
+  }
   state.last = { x, y };
   state.turn++;
   state.stats.placed++;
