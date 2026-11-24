@@ -22,6 +22,7 @@
       <div class="stat"><span class="lbl">Glory</span><b id="score">0</b></div>
       <div class="stat"><span class="lbl">Depth</span><b id="depth">0</b></div>
       <div class="stat"><span class="lbl">Pieces</span><b id="supply">0</b></div>
+      <span id="modeTag" class="tag" title="Sandbox: you choose every piece" hidden>Sandbox</span>
     </div>
     <div id="charters"></div>
     <div id="lore" class="card" hidden>
@@ -39,6 +40,14 @@
     <button class="icon" id="bCenter" title="Center the view (C)" aria-label="Center the view">⌖</button>
     <button class="icon" id="bHelp" title="How to play (H)" aria-label="How to play">?</button>
     <button class="icon" id="bMenu" title="Menu" aria-label="Menu">☰</button>
+  </div>
+
+  <div id="palette" class="card" hidden>
+    <div class="pstyles" role="group" aria-label="Style (T)">
+      <button id="pStyle-dungeon" title="Stone pieces (T)">Stone</button>
+      <button id="pStyle-cave" title="Cave pieces (T)">Cave</button>
+    </div>
+    <div id="paletteKinds" role="toolbar" aria-label="Choose the next piece ([ and ])"></div>
   </div>
 
   <div id="hand">
@@ -68,12 +77,14 @@
       <li><b>Finish rooms.</b> When every door of a room leads somewhere, it gets furnished: a <i>storeroom</i>, <i>guardroom</i>, <i>armoury</i>, <i>crypt</i> or <i>great hall</i>. Rooms finished from depth 9 down also hold <i>treasure</i>.</li>
       <li><b>Delve deep.</b> Depth is the number of pieces between a room and the stairs. Reaching a new depth is worth glory, and doors that join the same style (stone or cave) are worth more.</li>
       <li><b>Finished rooms and quests bring new pieces.</b> When the last piece is laid, the delve is over.</li>
+      <li><b>Sandbox.</b> From the menu, start a sandbox and choose every piece yourself from the tray at the bottom, stone or cave. Pieces never run out; it has its own save, so your delve waits for you.</li>
       <li><b>Bring your own map.</b> From the menu, import a map made with <a href="https://watabou.github.io/one-page-dungeon/" target="_blank" rel="noopener">One Page Dungeon</a> and dig on from it: doors laid against its old walls break through.</li>
     </ol>
     <div class="controls">
       <div><b>Mouse</b> · click a glowing square to lay · <kbd>R</kbd> or right click for the next way it fits · drag to move · right drag to rotate the view · wheel to zoom</div>
       <div><b>Touch</b> · tap a spot, tap again to lay · ⟲ ⟳ for the next way it fits · drag, pinch and twist the view</div>
       <div><b>Keys</b> · <kbd>Z</kbd> undo · <kbd>X</kbd> discard · <kbd>C</kbd> center · <kbd>Q</kbd>/<kbd>E</kbd> rotate the view · <kbd>WASD</kbd> move</div>
+      <div><b>Sandbox</b> · click or tap a piece in the tray · <kbd>[</kbd> <kbd>]</kbd> previous and next piece · <kbd>T</kbd> stone or cave</div>
     </div>
     <button class="btn" id="bHelpClose">Start digging</button>
     <p class="credits">Models: Modular Dungeon Kit, Modular Cave Kit and Mini Dungeon by Kenney (CC0). Code: GPL-3.0.</p>
@@ -82,12 +93,17 @@
 
 <div id="menu" class="overlay" hidden>
   <div class="sheet small">
-    <h2>Dungeon</h2>
+    <h2 id="menuTitle">Dungeon</h2>
     <p>Seed <code id="seedLabel"></code></p>
     <button class="btn" id="bNew">New dungeon</button>
     <button class="btn alt" id="bDaily">Today's dungeon</button>
     <button class="btn alt" id="bRestart">Restart this dungeon</button>
     <button class="btn alt" id="bShare">Copy link to this dungeon</button>
+    <h3>Sandbox</h3>
+    <button class="btn alt" id="bSandboxLeave" hidden>Back to the delve</button>
+    <button class="btn alt" id="bSandboxContinue" hidden>Continue the sandbox</button>
+    <button class="btn alt" id="bSandbox">Sandbox (choose every piece)</button>
+    <p class="hint">Choose every piece yourself, as many as you like. The sandbox saves apart from your delve.</p>
     <h3>Maps</h3>
     <button class="btn alt" id="bImport">Import a One Page Dungeon map…</button>
     <button class="btn alt" id="bExportOPD">Export as One Page Dungeon JSON</button>

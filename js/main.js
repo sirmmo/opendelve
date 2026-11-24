@@ -2,7 +2,7 @@ import { View, CELL, pieceCenter, centerOf } from './view.js';
 import { importOPD, exportOPD, isOPD } from './opd.js';
 import { toGeoJSON } from './geojson.js';
 import * as R from './rules.js';
-import { PIECES, ROOMS } from './pieces.js';
+import { PIECES, ROOMS, STYLES } from './pieces.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -10,6 +10,8 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
 };
 const PREFIX = 'opendelve.';
+// The sandbox keeps its own save, so trying it never overwrites the delve.
+const slot = (mode) => PREFIX + (mode === R.SANDBOX ? 'sandbox.' : '');
 
 const view = new View($('scene'));
 let state = null;
@@ -38,11 +40,15 @@ function setURL(seed) {
   // An imported map can't be rebuilt from a seed, so don't offer one.
   if (state?.opd) u.searchParams.delete('seed');
   else u.searchParams.set('seed', seed);
+  if (state && R.isSandbox(state)) u.searchParams.set('mode', R.SANDBOX);
+  else u.searchParams.delete('mode');
   history.replaceState(null, '', u);
 }
 
-function startGame(seed) {
-  state = R.newGame(seed);
+const sandbox = () => !!state && R.isSandbox(state);
+
+function startGame(seed, mode) {
+  state = R.newGame(seed, { mode });
   undoJSON = null;
   selected = null;
   seenCharters = new Set(state.charters.map((c) => c.id));
@@ -64,15 +70,46 @@ function resume(saved, undo) {
   view.sync(state, { animate: false });
   view.frame(state);
   setURL(state.seed);
+  store.set(PREFIX + 'mode', state.mode || 'delve');
   onTurn();
 }
 
 function save() {
-  store.set(PREFIX + 'save', JSON.stringify(state));
-  store.set(PREFIX + 'undo', undoJSON || '');
+  const s = slot(state.mode);
+  store.set(s + 'save', JSON.stringify(state));
+  store.set(s + 'undo', undoJSON || '');
+  store.set(PREFIX + 'mode', state.mode || 'delve');
 }
 
-function onTurn() {
+// The saved game of a mode, if it can still be played (or looked at, if it is a sealed map).
+function loadSaved(mode, seed) {
+  let saved = null;
+  try { saved = JSON.parse(store.get(slot(mode) + 'save') || 'null'); } catch { saved = null; }
+  if (!saved || saved.version !== 1 || (saved.over && !saved.sealed)) return null;
+  if ((saved.mode || null) !== (mode === R.SANDBOX ? R.SANDBOX : null)) return null;
+  if (seed && saved.seed !== seed) return null;
+  return saved;
+}
+
+// Into the sandbox (a new one, or the one saved) and back to the delve.
+function enterSandbox(fresh) {
+  $('menu').hidden = true;
+  const saved = !fresh && loadSaved(R.SANDBOX);
+  if (saved) resume(saved, store.get(slot(R.SANDBOX) + 'undo'));
+  else startGame(randomSeed(), R.SANDBOX);
+  toast('<b>Sandbox</b> · choose every piece from the tray');
+}
+
+function leaveSandbox() {
+  $('menu').hidden = true;
+  const saved = loadSaved(null);
+  if (saved) resume(saved, store.get(slot(null) + 'undo'));
+  else startGame(randomSeed());
+}
+
+// `keepFits`: what fits where is still known (only the piece in hand changed).
+function onTurn(keepFits) {
+  fits = keepFits || null;
   const piece = state.queue[0];
   spots = new Map();
   breaches = new Set();
@@ -84,6 +121,7 @@ function onTurn() {
   }
   lastCell = '';
   hud();
+  palette();
   refreshGhost();
   view.thumbs.draw($('thumb1'), state.queue[1], 0);
   view.thumbs.draw($('thumb2'), state.queue[2], 0);
@@ -134,7 +172,9 @@ function refreshGhost() {
 }
 
 function previewAt(o) {
-  const k = `${state.turn}|${o.rot}|${o.x}|${o.y}`;
+  // In a sandbox the piece in hand can change within a turn.
+  const p = state.queue[0];
+  const k = `${state.turn}|${p.kind}|${p.style}|${o.rot}|${o.x}|${o.y}`;
   if (previewCache.k !== k) previewCache = { k, v: R.preview(state, o.rot, o.x, o.y) };
   return previewCache.v;
 }
@@ -199,9 +239,9 @@ function react(events) {
       delay += 0.5;
       const name = ROOMS[e.room].name;
       floater(at(e.id), e.treasure ? `${name} · treasure!` : name, 'build', delay);
-      toast(`<b>${name}</b> finished${e.treasure ? ', with treasure' : ''} · +${e.pts} · +${e.tiles} piece${e.tiles === 1 ? '' : 's'}`);
+      toast(`<b>${name}</b> finished${e.treasure ? ', with treasure' : ''} · +${e.pts}${piecesText(e.tiles)}`);
     }
-    if (e.type === 'charter') toast(`Charter fulfilled: ${e.text} · <b>+${e.pts}</b> · +${e.tiles} pieces`);
+    if (e.type === 'charter') toast(`Charter fulfilled: ${e.text} · <b>+${e.pts}</b>${piecesText(e.tiles)}`);
   }
   bump('score');
   if (events.some((e) => e.type === 'room' || e.type === 'charter')) bump('supply');
@@ -209,26 +249,33 @@ function react(events) {
 
 // ---------- HUD ----------
 
+// " · +2 pieces", or nothing in a sandbox, where pieces never run out.
+const piecesText = (n) => (sandbox() || !n ? '' : ` · +${n} piece${n === 1 ? '' : 's'}`);
+
 // Tell the view how much of the screen the HUD covers at the top and the bottom.
 function insets() {
   if ($('hud').hidden) return;
   const top = Math.max($('scorecard').getBoundingClientRect().bottom, $('charters').getBoundingClientRect().bottom);
-  view.setInsets(top, window.innerHeight - $('hand').getBoundingClientRect().top);
+  const bottom = $('palette').hidden ? $('hand').getBoundingClientRect().top : $('palette').getBoundingClientRect().top;
+  view.setInsets(top, window.innerHeight - bottom);
 }
 window.addEventListener('resize', insets);
 
 function hud() {
   $('score').textContent = state.score;
-  $('supply').textContent = state.supply;
+  const sb = sandbox();
+  $('supply').textContent = sb ? '∞' : state.supply;
   $('depth').textContent = state.maxDepth;
-  $('supply').classList.toggle('low', state.supply <= 5);
+  $('supply').classList.toggle('low', !sb && state.supply <= 5);
+  $('modeTag').hidden = !sb;
+  document.body.classList.toggle('sandbox', sb);
   const box = $('charters');
   box.innerHTML = '';
   for (const c of state.charters) {
     const now = Math.min(R.charterProgress(state, c), c.n);
     const el = document.createElement('div');
     el.className = 'charter card' + (seenCharters.has(c.id) ? '' : ' fresh');
-    el.innerHTML = `<div class="head"><span class="seal">Quest</span><span class="reward">+${c.pts} · +${c.tiles} pieces</span></div>
+    el.innerHTML = `<div class="head"><span class="seal">Quest</span><span class="reward">+${c.pts}${piecesText(c.tiles)}</span></div>
       <div class="txt">${R.charterText(c)} <small>(${now}/${c.n})</small></div>
       <div class="prog"><i style="width:${(100 * now) / c.n}%"></i></div>`;
     box.appendChild(el);
@@ -237,6 +284,106 @@ function hud() {
   $('seedLabel').textContent = state.seed;
   $('best').textContent = store.get(PREFIX + 'best') || 0;
   insets();
+}
+
+// ---------- sandbox tray ----------
+
+const KIND_NAMES = { corridor: 'Corridor', corner: 'Corner', junction: 'Junction', crossing: 'Crossing', deadend: 'Dead end' };
+const STYLE_NAMES = { dungeon: 'Stone', cave: 'Cave' };
+
+function kindName(kind) {
+  const p = PIECES[kind];
+  if (!p.room) return KIND_NAMES[kind] || kind;
+  return `${ROOMS[p.room].name}, ${p.w}×${p.h}${kind.endsWith('_b') ? ' (variant)' : ''}`;
+}
+
+let trayStyle = '';
+let trayBuilt = false;
+let fits = null; // kind -> fits somewhere, for this turn (choosing a piece doesn't change it)
+
+function buildTray() {
+  const box = $('paletteKinds');
+  for (const kind of R.SANDBOX_KINDS) {
+    const b = document.createElement('button');
+    b.className = 'pk';
+    b.dataset.kind = kind;
+    const c = document.createElement('canvas');
+    c.width = 96;
+    c.height = 96;
+    b.appendChild(c);
+    b.onclick = () => pickPiece(kind);
+    box.appendChild(b);
+  }
+  // A mouse wheel scrolls the tray sideways when it doesn't fit.
+  box.addEventListener('wheel', (e) => {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    e.preventDefault();
+    box.scrollLeft += e.deltaY;
+  }, { passive: false });
+  for (const style of STYLES) $('pStyle-' + style).onclick = () => pickPiece(state.queue[0]?.kind || 'corridor', style);
+  trayBuilt = true;
+}
+
+// Shows the tray in a sandbox: the piece in hand marked, pieces that fit nowhere dimmed.
+function palette() {
+  const sb = sandbox() && !state.over;
+  $('palette').hidden = !sb;
+  if (!sb) return;
+  if (!trayBuilt) buildTray();
+  const cur = state.queue[0];
+  const style = cur ? cur.style : 'dungeon';
+  if (style !== trayStyle) {
+    trayStyle = style;
+    for (const b of $('paletteKinds').children) view.thumbs.draw(b.firstChild, { kind: b.dataset.kind, style, v: 1 }, 0);
+  }
+  for (const st of STYLES) {
+    $('pStyle-' + st).classList.toggle('on', st === style);
+    $('pStyle-' + st).setAttribute('aria-pressed', String(st === style));
+  }
+  // Style never changes where a piece fits.
+  if (!fits) fits = Object.fromEntries(R.SANDBOX_KINDS.map((k) => [k, R.legalSpots(state, { kind: k, style, v: 0 }).length > 0]));
+  for (const b of $('paletteKinds').children) {
+    const kind = b.dataset.kind;
+    const on = !!cur && kind === cur.kind;
+    b.classList.toggle('on', on);
+    b.classList.toggle('nofit', !fits[kind]);
+    b.setAttribute('aria-pressed', String(on));
+    const label = `${STYLE_NAMES[style]} ${kindName(kind).toLowerCase()}${fits[kind] ? '' : ' · fits nowhere now'}`;
+    b.title = label;
+    b.setAttribute('aria-label', label);
+  }
+  const box = $('paletteKinds');
+  const onBtn = box.querySelector('.pk.on');
+  if (onBtn) {
+    const br = box.getBoundingClientRect();
+    const r = onBtn.getBoundingClientRect();
+    if (r.left < br.left) box.scrollLeft += r.left - br.left - 8;
+    else if (r.right > br.right) box.scrollLeft += r.right - br.right + 8;
+  }
+}
+
+function pickPiece(kind, style) {
+  if (!sandbox() || !R.choose(state, kind, style)) return;
+  const keep = fits;
+  save();
+  onTurn(keep);
+  // A spot picked on a touch screen stays picked if the new piece fits there too.
+  if (selected && !spots.has(R.key(selected.x, selected.y))) {
+    selected = null;
+    refreshGhost();
+  }
+}
+
+function cyclePiece(dir) {
+  if (!sandbox()) return;
+  const kinds = R.SANDBOX_KINDS;
+  const i = kinds.indexOf(state.queue[0]?.kind);
+  pickPiece(kinds[(i + dir + kinds.length) % kinds.length]);
+}
+
+function toggleStyle() {
+  if (!sandbox() || !state.queue[0]) return;
+  pickPiece(state.queue[0].kind, state.queue[0].style === 'dungeon' ? 'cave' : 'dungeon');
 }
 
 function bump(id) {
@@ -447,6 +594,9 @@ window.addEventListener('keydown', (e) => {
   else if (k === 'f') rotate(-1);
   else if (k === 'z') undo();
   else if (k === 'x') discardTile();
+  else if (k === '[') cyclePiece(-1);
+  else if (k === ']') cyclePiece(1);
+  else if (k === 't') toggleStyle();
   else if (k === 'c') view.frame(state);
   else if (k === 'h' || k === '?') $('help').hidden = false;
   else if (k === 'q') view.cam.yaw += 0.3;
@@ -500,7 +650,8 @@ async function importFile(file) {
     toast("That isn't a One Page Dungeon map (it has no rects and doors)");
     return;
   }
-  state = importOPD(json);
+  const mode = sandbox() ? R.SANDBOX : undefined;
+  state = importOPD(json, { mode });
   undoJSON = null;
   selected = null;
   seenCharters = new Set(state.charters.map((c) => c.id));
@@ -512,7 +663,7 @@ async function importFile(file) {
   setURL(state.seed);
   save();
   onTurn();
-  toast(state.sealed ? `<b>${state.opd.title}</b> has no way out to dig from: have a look around` : `<b>${state.opd.title}</b> imported · dig on from its entrance`);
+  toast(state.sealed ? `<b>${state.opd.title}</b> has no way out to dig from: have a look around` : `<b>${state.opd.title}</b> imported${mode ? ' into the sandbox' : ''} · dig on from its entrance`);
   $('lore').querySelector('#loreHead').setAttribute('aria-expanded', 'true');
   $('loreBody').hidden = false;
 }
@@ -581,11 +732,24 @@ $('bUndo').onclick = undo;
 $('bCenter').onclick = () => view.frame(state);
 $('bHelp').onclick = () => { $('help').hidden = false; };
 $('bHelpClose').onclick = () => { $('help').hidden = true; store.set(PREFIX + 'seenHelp', '1'); };
-$('bMenu').onclick = () => { hud(); $('menu').hidden = false; };
+$('bMenu').onclick = () => {
+  hud();
+  const sb = sandbox();
+  $('bSandboxContinue').hidden = sb || !loadSaved(R.SANDBOX);
+  $('bSandboxLeave').hidden = !sb;
+  $('bRestart').hidden = sb;
+  $('bShare').hidden = sb;
+  $('bSandbox').textContent = sb ? 'New sandbox' : 'Sandbox (choose every piece)';
+  $('menuTitle').textContent = sb ? 'Sandbox' : 'Dungeon';
+  $('menu').hidden = false;
+};
 $('bMenuClose').onclick = () => { $('menu').hidden = true; };
 $('bNew').onclick = () => { $('menu').hidden = true; startGame(randomSeed()); };
 $('bDaily').onclick = () => { $('menu').hidden = true; startGame(todaySeed()); };
-$('bRestart').onclick = () => { $('menu').hidden = true; startGame(state.seed); };
+$('bRestart').onclick = () => { $('menu').hidden = true; startGame(state.seed, state.mode); };
+$('bSandbox').onclick = () => enterSandbox(true);
+$('bSandboxContinue').onclick = () => enterSandbox(false);
+$('bSandboxLeave').onclick = leaveSandbox;
 $('bShare').onclick = async () => {
   const u = new URL(location.href);
   u.search = '?seed=' + encodeURIComponent(state.seed);
@@ -607,11 +771,13 @@ for (const id of ['help', 'menu']) {
 
 async function boot() {
   await view.load((k) => { $('loadbar').style.width = `${Math.round(k * 100)}%`; });
-  const urlSeed = new URLSearchParams(location.search).get('seed');
-  let saved = null;
-  try { saved = JSON.parse(store.get(PREFIX + 'save') || 'null'); } catch { saved = null; }
-  if (saved && saved.version === 1 && (!saved.over || saved.sealed) && (!urlSeed || saved.seed === urlSeed)) resume(saved, store.get(PREFIX + 'undo'));
-  else startGame(urlSeed || randomSeed());
+  const params = new URLSearchParams(location.search);
+  const urlSeed = params.get('seed');
+  // ?mode=sandbox opens the sandbox; without a seed in the link, carry on in the last mode played.
+  const mode = params.get('mode') === R.SANDBOX || (!urlSeed && store.get(PREFIX + 'mode') === R.SANDBOX) ? R.SANDBOX : undefined;
+  const saved = loadSaved(mode, urlSeed);
+  if (saved) resume(saved, store.get(slot(mode) + 'undo'));
+  else startGame(urlSeed || randomSeed(), mode);
   $('loading').hidden = true;
   $('hud').hidden = false;
   insets();
@@ -619,7 +785,7 @@ async function boot() {
   view.applyShift();
   if (!store.get(PREFIX + 'seenHelp')) $('help').hidden = false;
   view.start();
-  window.__opendelve = { get state() { return state; }, view, R, placeOption, rotate, CELL, PIECES, importOPD, exportOPD, toGeoJSON, importFile };
+  window.__opendelve = { get state() { return state; }, view, R, placeOption, rotate, pickPiece, enterSandbox, leaveSandbox, CELL, PIECES, importOPD, exportOPD, toGeoJSON, importFile };
 }
 
 boot().catch((err) => {

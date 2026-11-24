@@ -16,9 +16,13 @@ const TAU = Math.PI * 2;
 const KIT = ['corridor', 'corridor-corner', 'corridor-junction', 'corridor-intersection', 'corridor-end',
   'room-small', 'room-small-variation', 'room-corner', 'room-wide', 'room-wide-variation', 'room-large',
   'room-large-variation', 'gate', 'gate-metal-bars', 'stairs'];
-const PROPS = ['banner', 'barrel', 'chair', 'character-human', 'character-orc', 'chest', 'coin', 'column', 'pot',
-  'potion', 'rocks', 'stones', 'table', 'trap', 'weapon-spear', 'weapon-sword', 'shield-round',
+const PROPS = ['banner', 'barrel', 'chair', 'character-human', 'character-orc', 'column', 'pot',
+  'rocks', 'stones', 'table', 'trap', 'weapon-spear', 'weapon-sword', 'shield-round',
   'shield-rectangle', 'wood-support', 'key', 'stairs'];
+// Treasure from the KayKit Dungeon Pack (glTF sharing one texture), in models/treasure/.
+const TREASURE = ['chest_gold', 'chest_large_gold', 'chest_mimic', 'coin_stack_small', 'coin_stack_medium',
+  'coin_stack_large', 'rocks_gold', 'key_gold'];
+const KAYKIT = 0.42; // KayKit pieces are about 2.4 times the size of Kenney's props.
 
 function prng(seed) {
   let s = (seed >>> 0) || 1;
@@ -100,13 +104,35 @@ function furniture(p, style, R) {
       add(style === 'cave' ? 'character-orc' : 'character-human', 1.6, 1.8, Math.PI * 0.85);
       break;
   }
-  if (p.treasure) {
-    add('chest', 0.3, -0.9, R() * 0.6 - 0.3);
-    add('coin', -0.4, -0.5, R() * TAU, 0.8);
-    add('coin', 0.9, -0.2, R() * TAU, 0.8);
-    add('potion', -0.2, -1.4, 0, 0.9);
-  }
+  if (p.treasure) out.push(...hoard(room, style, R));
   if (style === 'cave' && room && room !== 'hall') add('character-orc', -0.3, 0.4, R() * TAU);
+  return out;
+}
+
+// A treasure room's hoard: a gold chest (the big one in halls and crypts; one chest in eight is a
+// mimic), coin stacks, a gold key, and gold ore in caves.
+// A treasure room's hoard: a gold chest (the big one in halls and crypts; one chest in eight is a
+// mimic), coin stacks, a gold key, and gold ore in caves. Halls keep theirs in the corner between
+// the table and the east columns: the only spot clear in every large room (both room models have a
+// pillar near the middle, and the cave variation has rocks to the west). Crypts keep it west of the
+// middle column pair.
+const HOARD = {
+  hall: { chest: [3.0, -1.3, -Math.PI / 2], coins: [[2.1, -2.2], [2.3, -0.6], [3.4, 0.1]], key: [2.0, -1.4], ore: [3.3, -2.3] },
+  crypt: { chest: [-1.1, -0.5, 0], coins: [[-2.15, 0.05], [-0.35, 0.25], [-1.6, 0.75]], key: [-0.4, -0.75], ore: [-2.7, -0.7] },
+  room: { chest: [0.3, -1.0, 0], coins: [[-0.75, -0.45], [1.05, -0.25]], key: [1.0, -1.25], ore: [-1.3, -1.2] },
+};
+
+function hoard(room, style, R) {
+  const out = [];
+  const add = (m, [x, z], ry, s = 1) => out.push({ m: `treasure/${m}`, x, z, ry, s: KAYKIT * s });
+  const big = room === 'hall' || room === 'crypt';
+  const at = HOARD[room] || HOARD.room;
+  const chest = R() < 0.125 ? 'chest_mimic' : big ? 'chest_large_gold' : 'chest_gold';
+  add(chest, at.chest, at.chest[2] + R() * 0.6 - 0.3);
+  const stacks = ['coin_stack_small', 'coin_stack_medium', 'coin_stack_large'];
+  at.coins.forEach((c, i) => add(i === 0 ? stacks[big ? 2 : 1] : stacks[Math.floor(R() * (big ? 3 : 2))], c, R() * TAU));
+  add('key_gold', at.key, R() * TAU, 0.8);
+  if (style === 'cave') add('rocks_gold', at.ore, R() * TAU, 0.8);
   return out;
 }
 
@@ -191,6 +217,7 @@ export class View {
     const jobs = [];
     for (const style of ['dungeon', 'cave']) for (const m of KIT) jobs.push([`${style}/${m}`, `models/${style}/${m}.glb`, true]);
     for (const m of PROPS) jobs.push([m, `models/props/${m}.glb`, false]);
+    for (const m of TREASURE) jobs.push([`treasure/${m}`, `models/treasure/${m}.gltf`, false]);
     let done = 0;
     await Promise.all(jobs.map(async ([name, url, kit]) => {
       const gltf = await loader.loadAsync(url);
@@ -256,11 +283,17 @@ export class View {
         gate.rotation.y = along ? Math.PI / 2 : 0;
         g.add(gate);
       }
-      if (t === DOOR.STAIRS || t === DOOR.STEPS || t === DOOR.EXIT) prop('stairs', CELL / 2, CELL / 2, along ? Math.PI / 2 : 0, 0.9);
+      // The steps climb out through the door, towards the side that leads off the map (the
+      // import lists it last), or along the door's axis. The model's high end is its north (-z).
+      const { x: ax, y: ay } = p.door.dir;
+      const sides = L.doors.filter(([x, y, d]) => x === 0 && y === 0 && Math.abs(DX[d]) === Math.abs(ax) && Math.abs(DY[d]) === Math.abs(ay));
+      const out = sides.length ? { x: DX[sides[sides.length - 1][2]], y: DY[sides[sides.length - 1][2]] } : p.door.dir;
+      const climb = Math.atan2(-out.x, -out.y);
+      if (t === DOOR.STAIRS || t === DOOR.STEPS || t === DOOR.EXIT) prop('stairs', CELL / 2, CELL / 2, climb, 0.9);
     }
     if (p.rect?.ending) {
-      prop('chest', (L.w / 2) * CELL, (L.h / 2) * CELL - 0.3, 0);
-      prop('coin', (L.w / 2) * CELL + 0.7, (L.h / 2) * CELL + 0.2, 0.5, 0.8);
+      prop('treasure/chest_gold', (L.w / 2) * CELL, (L.h / 2) * CELL - 0.3, 0, KAYKIT);
+      prop('treasure/coin_stack_medium', (L.w / 2) * CELL + 0.8, (L.h / 2) * CELL + 0.2, 0.5, KAYKIT);
     }
     if (p.rect?.rotunda) prop('column', (L.w / 2) * CELL, (L.h / 2) * CELL);
     g.userData.top = new THREE.Group();

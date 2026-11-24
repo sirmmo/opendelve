@@ -31,10 +31,11 @@ export function isOPD(json) {
 
 // A new game whose dungeon starts as the imported map. Each rect becomes a "ruin" piece; you
 // dig on from the map's entrance (and any exit) with a fresh supply of pieces.
-export function importOPD(json) {
+// `opts.mode`: 'sandbox' to dig on in sandbox mode (see rules.js).
+export function importOPD(json, opts = {}) {
   if (!isOPD(json)) throw new Error('This is not a One Page Dungeon map: it has no rects or doors.');
   const title = String(json.title || 'Imported dungeon');
-  const state = emptyGame(`opd-${slug(title)}-${json.rects.length}`);
+  const state = emptyGame(`opd-${slug(title)}-${json.rects.length}`, opts);
   const doorAt = new Map(json.doors.map((d) => [key(d.x, d.y), d]));
 
   json.rects.forEach((r, i) => {

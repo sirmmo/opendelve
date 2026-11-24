@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { newGame, place, discard, legalSpots, freePorts, depths, pieceCells, key } from '../js/rules.js';
+import { newGame, place, discard, legalSpots, freePorts, depths, pieceCells, key, choose, START_SUPPLY } from '../js/rules.js';
 import { importOPD, exportOPD, isOPD, DOOR } from '../js/opd.js';
 import { toGeoJSON } from '../js/geojson.js';
 
@@ -48,6 +48,21 @@ test('a door laid against a ruin wall breaks through it', () => {
   assert.ok(corridor.shape.doors.some(([x, y, d]) => corridor.x + x === 2 && corridor.y + y === 0 && d === 3));
   const d = depths(s);
   assert.equal(d[s.cells[key(2, -1)]], d[corridor.id] + 1);
+});
+
+test('a map can be imported into a sandbox and dug on with chosen pieces', () => {
+  const s = importOPD(fixture(), { mode: 'sandbox' });
+  assert.equal(s.mode, 'sandbox');
+  assert.equal(s.opd.title, 'Little Crypt of the Test Suite');
+  assert.equal(s.queue.length, 1);
+  assert.ok(choose(s, 'large', 'cave'));
+  const spot = legalSpots(s, s.queue[0])[0];
+  assert.ok(place(s, spot.options[0].rot, spot.options[0].x, spot.options[0].y));
+  assert.equal(s.supply, START_SUPPLY);
+  assert.equal(s.queue[0].kind, 'large');
+  const out = exportOPD(s);
+  assert.ok(out.rects.length > fixture().rects.length);
+  assert.ok(toGeoJSON(s).features.some((f) => f.properties.kind === 'large'));
 });
 
 test('an empty map can be looked at but not played', () => {

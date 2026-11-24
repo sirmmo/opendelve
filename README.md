@@ -29,6 +29,14 @@ engine and three.js view, on a square grid with pieces that cover several cells.
 Glory per piece: +2 for each door joined (+3 if both pieces are the same style), +3 for each
 new level of depth. Rooms, treasure and quests add their own.
 
+**Sandbox.** Menu → *Sandbox (choose every piece)* starts a dungeon with no bag: you pick each
+piece from a tray of every kind (corridors, corners, junctions, crossings, dead ends and each
+room), in stone or cave, then lay and turn it as usual. Pieces never run out and the delve never
+ends; doors, depth, rooms, treasure, glory and quests work as in the normal game, and undo still
+works. The sandbox has its own save, so it never overwrites your delve: *Back to the delve* and
+*Continue the sandbox* switch between them (`?mode=sandbox` opens it). A One Page Dungeon map
+imported while in the sandbox becomes a sandbox too.
+
 Every dungeon has a seed; the same seed always deals the same pieces. Share one from the menu,
 or play *Today's dungeon*. The game saves after every move, and the last move can be undone.
 
@@ -71,6 +79,8 @@ elsewhere.
 | Rotate the view | right drag, `Q` / `E` | twist with two fingers |
 | Zoom | wheel, `+` / `-` | pinch |
 | Undo, discard, center | `Z`, `X`, `C` | ↶ and ⌖ buttons, *Discard* |
+| Sandbox: choose a piece | click it in the tray, `[` / `]` | tap it in the tray (swipe to see more) |
+| Sandbox: stone or cave | `T`, *Stone* / *Cave* | *Stone* / *Cave* |
 
 ## Development
 
@@ -86,13 +96,13 @@ node tools/balance.mjs 1 2 3      # greedy games per seed: length, score, rooms
 | Path | What |
 | --- | --- |
 | `js/pieces.js` | Pieces (size, doors, model), the bag, room types and rewards |
-| `js/rules.js` | The game: pure, seeded and JSON-serialisable (`newGame`, `legalSpots`, `place`, `preview`) |
-| `js/view.js` | three.js dungeon, gates, room furniture, ghost piece, hand thumbnails |
+| `js/rules.js` | The game: pure, seeded and JSON-serialisable (`newGame`, `legalSpots`, `place`, `preview`; `choose` in a sandbox) |
+| `js/view.js` | three.js dungeon, gates, room furniture, ghost piece, hand and tray thumbnails |
 | `js/opd.js` | One Page Dungeon JSON import and export |
 | `js/geojson.js`, `js/geo.js` | GeoJSON export: projection and merging cells into outlines |
-| `js/main.js` | Input, HUD, saving, undo, file import and downloads |
+| `js/main.js` | Input, HUD, sandbox tray, saving, undo, file import and downloads |
 | `tools/ports.py` | Measures each Kenney piece's footprint and doors from its mesh (`tools/glb.py` reads GLB) |
-| `models/` | The Kenney models the game uses: `dungeon/`, `cave/` and `props/`, each with its texture |
+| `models/` | The models the game uses: Kenney's `dungeon/`, `cave/` and `props/`, and KayKit's `treasure/`, each with its texture |
 
 The modular kits' wide corridors sit half a cell off the grid that rooms and narrow corridors
 share, so they are left out.
@@ -100,6 +110,8 @@ share, so they are left out.
 ## Credits
 
 - 3D models by [Kenney](https://kenney.nl), CC0: Modular Dungeon Kit, Modular Cave Kit, Mini Dungeon.
+- Treasure (gold chests, the mimic, coin stacks, gold keys and ore) from the KayKit Dungeon Pack by
+  [Kay Lousberg](https://www.kaylousberg.com), CC0.
 - [three.js](https://threejs.org), MIT (`vendor/three-LICENSE.txt`).
 - Fonts: Cinzel and Fredoka from Google Fonts (OFL).
 

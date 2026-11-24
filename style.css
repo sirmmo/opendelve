@@ -101,6 +101,35 @@ kbd { background: #fff; border: 1px solid #c9b48a; border-bottom-width: 2px; bor
   border-radius: 12px; font-weight: 700; padding: 4px 16px; box-shadow: var(--shadow);
 }
 
+/* sandbox: the mode tag and the tray of pieces above the hand */
+#scorecard .tag {
+  align-self: center; background: var(--gold); border: 2px solid var(--ink); border-radius: 8px; padding: 2px 8px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px;
+}
+body.sandbox #hand .next { display: none; }
+#palette {
+  position: absolute; left: 50%; bottom: calc(166px + var(--safe-b)); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px; padding: 5px; max-width: calc(100vw - 24px - var(--safe-l) - var(--safe-r));
+}
+#palette .pstyles { display: flex; flex-direction: column; gap: 4px; flex: none; }
+#palette .pstyles button {
+  border: 2px solid var(--ink); border-radius: 8px; background: var(--paper-2); font-size: 13px; font-weight: 700; padding: 3px 8px; min-width: 56px;
+}
+#palette .pstyles button.on { background: var(--blue); color: #fff; }
+#paletteKinds {
+  display: flex; gap: 4px; overflow-x: auto; touch-action: pan-x; overscroll-behavior: contain; scrollbar-width: thin; min-width: 0;
+}
+#paletteKinds::-webkit-scrollbar { height: 6px; }
+#paletteKinds::-webkit-scrollbar-thumb { background: var(--ink-soft); border-radius: 3px; }
+#paletteKinds::-webkit-scrollbar-track { background: transparent; }
+.pk {
+  flex: none; width: 60px; height: 60px; padding: 0; border: 2px solid transparent; border-radius: 10px; background: rgba(255, 255, 255, .45);
+}
+.pk canvas { display: block; width: 100%; height: 100%; }
+.pk:hover { background: #fff8e6; }
+.pk.on { border-color: var(--ink); background: #fffaf0; box-shadow: inset 0 0 0 2px var(--gold); }
+.pk.nofit canvas { opacity: .35; }
+
 /* tip next to the ghost */
 #tip {
   position: absolute; pointer-events: none; transform: translate(-50%, -100%); background: var(--paper); border: 2px solid var(--ink);
@@ -186,6 +215,10 @@ code { background: var(--paper-2); padding: 1px 6px; border-radius: 5px; }
   #thumb2 { width: 38px !important; height: 38px !important; }
   #bDiscard { font-size: 11px; padding: 1px 6px; }
   #bPlace { top: -14px; padding: 2px 12px; font-size: 14px; }
+  #palette { bottom: calc(120px + var(--safe-b)); gap: 4px; padding: 4px; max-width: calc(100vw - 16px - var(--safe-l) - var(--safe-r)); }
+  #palette .pstyles button { font-size: 12px; padding: 2px 6px; min-width: 48px; }
+  .pk { width: 50px; height: 50px; }
+  #scorecard .tag { font-size: 10px; padding: 1px 5px; letter-spacing: .8px; }
   #toasts { top: calc(56px + var(--safe-t)); }
   .toast { font-size: 14px; padding: 5px 12px; }
 }

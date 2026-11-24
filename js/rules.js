@@ -2,12 +2,18 @@
 // comes from the seeded generator inside it, so a seed always plays out the same way and a
 // game can be saved, restored and undone by copying the object.
 
-import { PIECES, BAG, ROOMS, TREASURE, TREASURE_DEPTH } from './pieces.js';
+import { PIECES, BAG, ROOMS, STYLES, TREASURE, TREASURE_DEPTH } from './pieces.js';
 
 export const DX = [1, 0, -1, 0];
 export const DY = [0, 1, 0, -1];
 export const START_SUPPLY = 45;
 export const HAND = 3;
+
+// Sandbox mode (state.mode === 'sandbox'): no bag. The player chooses every piece from these
+// kinds, in either style; the supply never runs out and the delve never ends by itself.
+export const SANDBOX = 'sandbox';
+export const SANDBOX_KINDS = BAG.map((b) => b.kind);
+export const isSandbox = (state) => state.mode === SANDBOX;
 
 export const key = (x, y) => x + ',' + y;
 export const unkey = (k) => k.split(',').map(Number);
@@ -105,7 +111,7 @@ export function freePorts(state) {
 
 // Can `kind` go here? Returns the doors it would join, or null.
 // Doors must meet doors and walls must meet walls; the piece must join at least one door; and
-// it may not seal the last way on while tiles remain.
+// it may not seal the last way on while tiles remain (in a sandbox they always do).
 export function check(state, kind, rot, ax, ay, freeBefore) {
   const L = layout(kind, rot);
   const mine = new Set();
@@ -258,9 +264,11 @@ export function countTreasure(state) {
 
 // ---------- new game ----------
 
-export function emptyGame(seed = String(Date.now() % 1e9)) {
+// `opts.mode`: 'sandbox' for a sandbox game, anything else (or nothing) for the normal one.
+export function emptyGame(seed = String(Date.now() % 1e9), opts = {}) {
   return {
     version: 1,
+    ...(opts.mode === SANDBOX ? { mode: SANDBOX } : {}),
     seed: String(seed),
     rng: hashSeed(seed),
     pieces: {},
@@ -280,8 +288,8 @@ export function emptyGame(seed = String(Date.now() % 1e9)) {
   };
 }
 
-export function newGame(seed = String(Date.now() % 1e9)) {
-  const state = emptyGame(seed);
+export function newGame(seed = String(Date.now() % 1e9), opts = {}) {
+  const state = emptyGame(seed, opts);
   addPiece(state, { kind: 'stairs', style: 'dungeon', v: 7 }, 0, 0, 0);
   return finishSetup(state);
 }
@@ -307,6 +315,15 @@ function addPiece(state, piece, rot, x, y) {
   return p;
 }
 
+function freshPiece(state, kind, style) {
+  return { kind, style, v: Math.floor(rand(state) * 1e6) };
+}
+
+// Pieces brought by rewards. A sandbox's supply never changes.
+function gain(state, n) {
+  if (!isSandbox(state)) state.supply += n;
+}
+
 function draw(state) {
   let piece;
   for (let i = 0; i < 4; i++) {
@@ -319,6 +336,11 @@ function draw(state) {
 }
 
 function refill(state) {
+  if (isSandbox(state)) {
+    // The piece in hand stays the player's choice; a new sandbox starts with a stone corridor.
+    if (!state.queue.length) state.queue.push(freshPiece(state, 'corridor', 'dungeon'));
+    return;
+  }
   while (state.queue.length < Math.min(HAND, state.supply)) state.queue.push(draw(state));
   if (state.supply <= 0) state.over = true;
 }
@@ -354,8 +376,13 @@ export function place(state, rot, x, y) {
   state.score += pts;
   events.push({ type: 'place', id: p.id, pts });
 
-  state.queue.shift();
-  state.supply--;
+  if (isSandbox(state)) {
+    // Keep the same kind and style in hand, so a run of corridors needs no new choice.
+    state.queue[0] = freshPiece(state, piece.kind, piece.style);
+  } else {
+    state.queue.shift();
+    state.supply--;
+  }
 
   for (const r of [p, ...links.map((id) => state.pieces[id])]) {
     const room = PIECES[r.kind].room;
@@ -363,13 +390,13 @@ export function place(state, rot, x, y) {
     r.done = true;
     const info = ROOMS[room];
     state.score += info.pts;
-    state.supply += info.tiles;
+    gain(state, info.tiles);
     state.stats.rooms++;
     const ev = { type: 'room', id: r.id, room, pts: info.pts, tiles: info.tiles };
     if ((depth[r.id] ?? 0) >= TREASURE_DEPTH) {
       r.treasure = true;
       state.score += TREASURE.pts;
-      state.supply += TREASURE.tiles;
+      gain(state, TREASURE.tiles);
       state.stats.treasure++;
       ev.treasure = true;
       ev.pts += TREASURE.pts;
@@ -385,7 +412,7 @@ export function place(state, rot, x, y) {
 }
 
 export function discard(state) {
-  if (state.over || !state.queue.length) return null;
+  if (state.over || !state.queue.length || isSandbox(state)) return null;
   state.queue.shift();
   state.supply--;
   state.turn++;
@@ -394,6 +421,18 @@ export function discard(state) {
   const events = [{ type: 'discard' }];
   if (state.over) events.push({ type: 'over', score: state.score });
   return events;
+}
+
+// Sandbox only: puts a piece of `kind` and `style` in hand (style defaults to the current one).
+// Returns the piece, or null if this isn't a sandbox, the game is over or the piece is unknown.
+// Choosing the piece already in hand keeps it as it is.
+export function choose(state, kind, style = state.queue[0]?.style || 'dungeon') {
+  if (!isSandbox(state) || state.over) return null;
+  if (!SANDBOX_KINDS.includes(kind) || !STYLES.includes(style)) return null;
+  const cur = state.queue[0];
+  if (cur && cur.kind === kind && cur.style === style) return cur;
+  state.queue = [freshPiece(state, kind, style)];
+  return state.queue[0];
 }
 
 export function preview(state, rot, x, y) {
@@ -453,7 +492,7 @@ function checkCharters(state, events) {
     const c = state.charters[i];
     if (charterProgress(state, c) < c.n) continue;
     state.score += c.pts;
-    state.supply += c.tiles;
+    gain(state, c.tiles);
     state.stats.charters++;
     events.push({ type: 'charter', text: charterText(c), pts: c.pts, tiles: c.tiles });
     const active = new Set(state.charters.map((x) => x.kind));
