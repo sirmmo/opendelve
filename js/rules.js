@@ -2,7 +2,7 @@
 // comes from the seeded generator inside it, so a seed always plays out the same way and a
 // game can be saved, restored and undone by copying the object.
 
-import { PIECES, BAG, ROOMS, STYLES, TREASURE, TREASURE_DEPTH } from './pieces.js';
+import { PIECES, BAG, ROOMS, STYLES, TREASURE, TREASURE_DEPTH, COMBOS } from './pieces.js';
 
 export const DX = [1, 0, -1, 0];
 export const DY = [0, 1, 0, -1];
@@ -262,6 +262,30 @@ export function countTreasure(state) {
   return Object.values(state.pieces).filter((p) => p.treasure).length;
 }
 
+// Academies and Archaeological Societies founded so far (saves from before them have none).
+export const countCombo = (state, combo) => state.stats[combo === 'academy' ? 'academies' : 'societies'] || 0;
+
+// Pieces within `reach` steps of `from` through joined doors, nearest first (then oldest).
+export function nearby(state, from, reach) {
+  const dist = { [from.id]: 0 };
+  const out = [];
+  let ring = [from];
+  for (let d = 1; d <= reach && ring.length; d++) {
+    const next = [];
+    for (const p of ring) {
+      for (const o of linksOf(state, p)) {
+        if (dist[o.id] !== undefined) continue;
+        dist[o.id] = d;
+        next.push(o);
+      }
+    }
+    next.sort((a, b) => a.id - b.id);
+    for (const o of next) out.push({ p: o, d });
+    ring = next;
+  }
+  return out;
+}
+
 // ---------- new game ----------
 
 // `opts.mode`: 'sandbox' for a sandbox game, anything else (or nothing) for the normal one.
@@ -284,7 +308,7 @@ export function emptyGame(seed = String(Date.now() % 1e9), opts = {}) {
     nextCharter: 1,
     last: null,
     over: false,
-    stats: { placed: 0, discarded: 0, rooms: 0, treasure: 0, charters: 0 },
+    stats: { placed: 0, discarded: 0, rooms: 0, treasure: 0, charters: 0, academies: 0, societies: 0 },
   };
 }
 
@@ -384,6 +408,7 @@ export function place(state, rot, x, y) {
     state.supply--;
   }
 
+  const society = countCombo(state, 'society') > 0;
   for (const r of [p, ...links.map((id) => state.pieces[id])]) {
     const room = PIECES[r.kind].room;
     if (!room || r.done || !isFinished(state, r)) continue;
@@ -401,10 +426,17 @@ export function place(state, rot, x, y) {
       ev.treasure = true;
       ev.pts += TREASURE.pts;
       ev.tiles += TREASURE.tiles;
+      if (society) {
+        // The Archaeological Society buys every find.
+        state.score += COMBOS.society.find;
+        ev.find = COMBOS.society.find;
+        ev.pts += COMBOS.society.find;
+      }
     }
     events.push(ev);
   }
 
+  checkCombos(state, events);
   checkCharters(state, events);
   refill(state);
   if (state.over) events.push({ type: 'over', score: state.score });
@@ -443,9 +475,45 @@ export function preview(state, rot, x, y) {
   return { pts: copy.score - before, events };
 }
 
+// ---------- academies and societies ----------
+
+const roomOf = (p) => PIECES[p.kind].room;
+
+// The nearest finished room of type `room` within `reach` of `from` not yet in a `combo`.
+function partner(state, from, room, combo, reach) {
+  const hit = nearby(state, from, reach).find(({ p }) => p.done && roomOf(p) === room && !p[combo]);
+  return hit ? hit.p : null;
+}
+
+function found(state, events, combo, members) {
+  const info = COMBOS[combo];
+  const stat = combo === 'academy' ? 'academies' : 'societies';
+  const n = (state.stats[stat] || 0) + 1;
+  state.stats[stat] = n;
+  for (const m of members) m[combo] = n;
+  state.score += info.pts;
+  gain(state, info.tiles);
+  events.push({ type: combo, n, ids: members.map((m) => m.id), id: members[0].id, pts: info.pts, tiles: info.tiles });
+}
+
+function checkCombos(state, events) {
+  for (const p of Object.values(state.pieces)) {
+    if (!p.done) continue;
+    if (roomOf(p) === 'library' && !p.academy) {
+      const shrine = partner(state, p, 'shrine', 'academy', COMBOS.academy.reach);
+      if (shrine) found(state, events, 'academy', [p, shrine]);
+    }
+    if (roomOf(p) === 'gallery' && !p.society) {
+      const library = partner(state, p, 'library', 'society', COMBOS.society.reach);
+      const crypt = partner(state, p, 'crypt', 'society', COMBOS.society.reach);
+      if (library && crypt) found(state, events, 'society', [p, library, crypt]);
+    }
+  }
+}
+
 // ---------- charters ----------
 
-const CHARTER_KINDS = ['depth', 'rooms', 'cave', 'dungeon', 'hall', 'treasure', 'crypt', 'armoury'];
+const CHARTER_KINDS = ['depth', 'rooms', 'cave', 'dungeon', 'hall', 'treasure', 'crypt', 'armoury', 'library', 'academy'];
 
 export function charterProgress(state, c) {
   switch (c.kind) {
@@ -454,6 +522,7 @@ export function charterProgress(state, c) {
     case 'cave': return largestStyle(state, 'cave');
     case 'dungeon': return largestStyle(state, 'dungeon');
     case 'treasure': return countTreasure(state);
+    case 'academy': return countCombo(state, 'academy');
     default: return countRooms(state, c.kind);
   }
 }
@@ -466,9 +535,10 @@ export function charterText(c) {
     case 'cave': return `Open a cavern of ${n} pieces`;
     case 'dungeon': return `Build ${n} stone pieces together`;
     case 'treasure': return n === 1 ? 'Find a treasure' : `Find ${n} treasures`;
+    case 'academy': return n === 1 ? 'Found an Academy' : `Found ${n} Academies`;
     default: {
-      const name = ROOMS[c.kind].name;
-      return n === 1 ? `Finish a ${name}` : `Finish ${n} ${name}s`;
+      const r = ROOMS[c.kind];
+      return n === 1 ? `Finish a ${r.name}` : `Finish ${n} ${r.plural || r.name + 's'}`;
     }
   }
 }
@@ -482,7 +552,7 @@ function makeCharter(state, kind) {
   else if (kind === 'cave' || kind === 'dungeon') c.n = Math.max(now + 3 + Math.floor(r * 3), 4);
   else c.n = now + 1;
   const step = c.n - now;
-  c.pts = kind === 'hall' || kind === 'treasure' ? 18 : 10 + 2 * step;
+  c.pts = kind === 'hall' || kind === 'treasure' || kind === 'academy' ? 18 : 10 + 2 * step;
   c.tiles = step >= 5 ? 3 : 2;
   return c;
 }

@@ -18,16 +18,28 @@ engine and three.js view, on a square grid with pieces that cover several cells.
 2. **Finish rooms.** When every door of a room leads somewhere, it gets furnished:
    storeroom, guardroom, armoury, crypt or great hall. Rooms finished at depth 9 or deeper
    also hold treasure, behind barred gates.
-3. **Delve deep.** A piece's depth is how many doors you pass from the stairs to reach it.
+3. **Ancient rooms.** Some rooms are found already in ruins, dressed from the moment they are
+   laid: the *lost library* (5×3, open at both ends, shelves along its long walls), the
+   *shrine* (a 3×3 corner room with a statue) and the *fallen gallery* (5×3, open on all
+   sides, broken columns under a standing arch). Finished, they give up their finds (candles,
+   pots, skulls) and, deep enough, treasure like any room. Two combinations found societies of
+   scholars, announced like rooms and quests (a step is one door from piece to piece; a room
+   joins at most one of each):
+   - **Academy:** a finished lost library and a finished shrine at most 3 steps apart.
+     +15 glory and +1 piece.
+   - **Archaeological Society:** a finished fallen gallery with a finished lost library and a
+     finished crypt (the dig) each at most 3 steps from it. +22 glory and +2 pieces, and from
+     then on every treasure found is worth 6 more.
+4. **Delve deep.** A piece's depth is how many doors you pass from the stairs to reach it.
    Every new depth is worth glory, and doors joining two pieces of the same style (stone or
    cave) are worth more than mixed ones.
-4. **Quests** set three goals at a time (reach depth 12, finish a crypt, open a cavern of six
-   pieces…).
-5. **Pieces run out.** You start with 45; finished rooms and quests bring more. When the last
+5. **Quests** set three goals at a time (reach depth 12, finish a crypt, open a cavern of six
+   pieces, found an Academy…).
+6. **Pieces run out.** You start with 45; finished rooms and quests bring more. When the last
    piece is laid, the delve is over.
 
 Glory per piece: +2 for each door joined (+3 if both pieces are the same style), +3 for each
-new level of depth. Rooms, treasure and quests add their own.
+new level of depth. Rooms, treasure, Academies, Societies and quests add their own.
 
 **Sandbox.** Menu → *Sandbox (choose every piece)* starts a dungeon with no bag: you pick each
 piece from a tray of every kind (corridors, corners, junctions, crossings, dead ends and each
@@ -53,9 +65,10 @@ OpenDelve reads and writes the JSON of watabou's
   any other.
 - **Export:** menu → *Export as One Page Dungeon JSON* (also on the end screen) writes the delve
   in the same format: `rects` for every piece, `doors` into rooms (arches for caves, a portcullis
-  for treasure rooms, stairs for the entrance), `notes` for finished rooms, `columns` for halls
-  and crypts, and the deepest finished room as the `ending`. An imported map exports with all its
-  original rects, doors and notes, plus whatever was dug.
+  for treasure rooms, stairs for the entrance), `notes` for finished rooms (naming the Academy
+  or Society a room belongs to), `columns` for halls, crypts and the columns still standing in
+  fallen galleries, and the deepest finished room as the `ending`. An imported map exports with
+  all its original rects, doors and notes, plus whatever was dug.
 
 The format has no walls of its own: floor is the union of the rects, so pieces that touch
 wall-to-wall look joined in tools that read it.
@@ -64,7 +77,8 @@ wall-to-wall look joined in tools that read it.
 
 Menu → *Download map (GeoJSON)* saves the dungeon as a GeoJSON FeatureCollection. Each feature
 has a `layer` property: `dungeon` (outline), `area` (merged stone, cave and ruin parts), `piece`
-(every piece, with `kind`, `room`, `finished`, `treasure`, `depth`), `passage` (lines through
+(every piece, with `kind`, `room`, `finished`, `treasure`, `depth`, and the number of the
+`academy` and `society` it belongs to), `passage` (lines through
 every doorway), `door`, `entrance`, `note` and `column` (points). The grid's (0, 0) sits at
 longitude/latitude 0, 0 with 1.5 m (5 ft) cells; open the game with `?origin=lon,lat` to place it
 elsewhere.
@@ -95,14 +109,15 @@ node tools/balance.mjs 1 2 3      # greedy games per seed: length, score, rooms
 
 | Path | What |
 | --- | --- |
-| `js/pieces.js` | Pieces (size, doors, model), the bag, room types and rewards |
+| `js/pieces.js` | Pieces (size, doors, model), the bag, room types, rewards, Academies and Societies |
+| `js/ruins.js` | How the ancient rooms are dressed with ruins: pure and seeded, so tests check every item stays on the floor and out of the doors |
 | `js/rules.js` | The game: pure, seeded and JSON-serialisable (`newGame`, `legalSpots`, `place`, `preview`; `choose` in a sandbox) |
 | `js/view.js` | three.js dungeon, gates, room furniture, ghost piece, hand and tray thumbnails |
 | `js/opd.js` | One Page Dungeon JSON import and export |
 | `js/geojson.js`, `js/geo.js` | GeoJSON export: projection and merging cells into outlines |
 | `js/main.js` | Input, HUD, sandbox tray, saving, undo, file import and downloads |
 | `tools/ports.py` | Measures each Kenney piece's footprint and doors from its mesh (`tools/glb.py` reads GLB) |
-| `models/` | The models the game uses: Kenney's `dungeon/`, `cave/` and `props/`, and KayKit's `treasure/`, each with its texture |
+| `models/` | The models the game uses: Kenney's `dungeon/`, `cave/` and `props/`, KayKit's `treasure/`, each with its texture, and Quaternius' `ruins/` (GLB, material colours, repainted in the Kenney palette at load) |
 
 The modular kits' wide corridors sit half a cell off the grid that rooms and narrow corridors
 share, so they are left out.
@@ -112,6 +127,9 @@ share, so they are left out.
 - 3D models by [Kenney](https://kenney.nl), CC0: Modular Dungeon Kit, Modular Cave Kit, Mini Dungeon.
 - Treasure (gold chests, the mimic, coin stacks, gold keys and ore) from the KayKit Dungeon Pack by
   [Kay Lousberg](https://www.kaylousberg.com), CC0.
+- Ruins (columns, the arch, statues, bookcases, pots, candles, bricks, the skull) from the
+  Ultimate Modular Ruins Pack by [Quaternius](https://quaternius.com), CC0
+  (`models/ruins/License.txt`).
 - [three.js](https://threejs.org), MIT (`vendor/three-LICENSE.txt`).
 - Fonts: Cinzel and Fredoka from Google Fonts (OFL).
 

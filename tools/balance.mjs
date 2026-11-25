@@ -2,6 +2,7 @@
 import { newGame, place, discard, preview, legalSpots } from '../js/rules.js';
 import { PIECES } from '../js/pieces.js';
 const seeds = process.argv.slice(2).length ? process.argv.slice(2) : ['1', '2', '3', '4', '5', '6'];
+const sum = { turns: 0, score: 0, academies: 0, societies: 0 };
 for (const seed of seeds) {
   const s = newGame(seed);
   const rooms = {};
@@ -15,5 +16,8 @@ for (const seed of seeds) {
     }
     for (const e of place(s, best.rot, best.x, best.y)) if (e.type === 'room') rooms[e.room] = (rooms[e.room] || 0) + 1;
   }
-  console.log(`seed ${seed}: turns ${s.turn} score ${s.score} discards ${s.stats.discarded} depth ${s.maxDepth} treasure ${s.stats.treasure} charters ${s.stats.charters}`, JSON.stringify(rooms));
+  const { academies = 0, societies = 0 } = s.stats;
+  for (const [k, v] of Object.entries({ turns: s.turn, score: s.score, academies, societies })) sum[k] += v;
+  console.log(`seed ${seed}: turns ${s.turn} score ${s.score} discards ${s.stats.discarded} depth ${s.maxDepth} treasure ${s.stats.treasure} charters ${s.stats.charters} academies ${academies} societies ${societies}`, JSON.stringify(rooms));
 }
+console.log('mean', Object.entries(sum).map(([k, v]) => `${k} ${(v / seeds.length).toFixed(1)}`).join(' '));

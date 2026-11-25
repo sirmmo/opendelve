@@ -7,6 +7,7 @@ import { GLTFLoader } from '../vendor/jsm/loaders/GLTFLoader.js';
 import { PIECES } from './pieces.js';
 import { layout, shapeOf, pieceDoors, pieceAt, depths, DX, DY, key } from './rules.js';
 import { DOOR } from './opd.js';
+import { ruinDressing, isAncient, RUIN_MODELS, ANCIENT_HOARD } from './ruins.js';
 
 export const CELL = 2; // world units per grid cell (models are 4 units per cell)
 const MODEL_SCALE = CELL / 4;
@@ -23,6 +24,13 @@ const PROPS = ['banner', 'barrel', 'chair', 'character-human', 'character-orc', 
 const TREASURE = ['chest_gold', 'chest_large_gold', 'chest_mimic', 'coin_stack_small', 'coin_stack_medium',
   'coin_stack_large', 'rocks_gold', 'key_gold'];
 const KAYKIT = 0.42; // KayKit pieces are about 2.4 times the size of Kenney's props.
+// The ruins pack is dark and olive; repaint its materials in the Kenney kits' pastel palette
+// (lavender stone, warm wood, bright books) and let the candle flames glow.
+const RUIN_COLORS = {
+  Main: '#a09ab8', Highlights: '#bcb6cf', Stone: '#b7b1c9', Wood: '#9a6338', DarkWood: '#6b4127',
+  Pages: '#eadfb6', Book: '#b54a3e', Book2: '#5e9445', Book3: '#7a55a8', Book4: '#4469a8',
+  Pot_Main: '#c27f45', Pot_Detail: '#a2462f', Bone: '#ece2c8', Candle: '#efe3bb', Light: '#ffb24a',
+};
 
 function prng(seed) {
   let s = (seed >>> 0) || 1;
@@ -104,8 +112,10 @@ function furniture(p, style, R) {
       add(style === 'cave' ? 'character-orc' : 'character-human', 1.6, 1.8, Math.PI * 0.85);
       break;
   }
+  // Ancient rooms give up their finds (their ruins stand from the moment they are laid).
+  if (isAncient(p.kind)) out.push(...toProps(ruinDressing(p).finds));
   if (p.treasure) out.push(...hoard(room, style, R));
-  if (style === 'cave' && room && room !== 'hall') add('character-orc', -0.3, 0.4, R() * TAU);
+  if (style === 'cave' && room && room !== 'hall' && !isAncient(p.kind)) add('character-orc', -0.3, 0.4, R() * TAU);
   return out;
 }
 
@@ -120,7 +130,14 @@ const HOARD = {
   hall: { chest: [3.0, -1.3, -Math.PI / 2], coins: [[2.1, -2.2], [2.3, -0.6], [3.4, 0.1]], key: [2.0, -1.4], ore: [3.3, -2.3] },
   crypt: { chest: [-1.1, -0.5, 0], coins: [[-2.15, 0.05], [-0.35, 0.25], [-1.6, 0.75]], key: [-0.4, -0.75], ore: [-2.7, -0.7] },
   room: { chest: [0.3, -1.0, 0], coins: [[-0.75, -0.45], [1.05, -0.25]], key: [1.0, -1.25], ore: [-1.3, -1.2] },
+  // Ancient rooms keep theirs clear of the ruins (js/ruins.js).
+  ...ANCIENT_HOARD,
 };
+
+// Ruins items are sized in world units per metre; props are scaled by PROP_SCALE in pieceGroup.
+function toProps(items) {
+  return items.map((d) => ({ ...d, s: d.s / PROP_SCALE }));
+}
 
 function hoard(room, style, R) {
   const out = [];
@@ -218,6 +235,7 @@ export class View {
     for (const style of ['dungeon', 'cave']) for (const m of KIT) jobs.push([`${style}/${m}`, `models/${style}/${m}.glb`, true]);
     for (const m of PROPS) jobs.push([m, `models/props/${m}.glb`, false]);
     for (const m of TREASURE) jobs.push([`treasure/${m}`, `models/treasure/${m}.gltf`, false]);
+    for (const m of RUIN_MODELS) jobs.push([`ruins/${m}`, `models/ruins/${m}.glb`, false]);
     let done = 0;
     await Promise.all(jobs.map(async ([name, url, kit]) => {
       const gltf = await loader.loadAsync(url);
@@ -227,6 +245,16 @@ export class View {
           o.receiveShadow = true;
         }
       });
+      if (name.startsWith('ruins/')) {
+        gltf.scene.traverse((o) => {
+          if (!o.isMesh) return;
+          for (const m of [o.material].flat()) {
+            const c = RUIN_COLORS[m.name];
+            if (c) m.color.set(c);
+            if (m.name === 'Light') m.emissive.set(c).multiplyScalar(0.9);
+          }
+        });
+      }
       if (kit) {
         // Kit pieces are centred on their footprint except the stairs; find the offset.
         const box = new THREE.Box3().setFromObject(gltf.scene);
@@ -312,6 +340,16 @@ export class View {
     m.position.copy(this.offsets[name]).multiplyScalar(-MODEL_SCALE);
     inner.add(m);
     const top = new THREE.Group();
+    // An ancient room's ruins belong to the piece: they show in the hand, the ghost and the tray.
+    if (isAncient(p.kind)) {
+      for (const d of toProps(ruinDressing({ ...p, done: false }).ruin)) {
+        const o = this.model(d.m);
+        o.scale.setScalar(PROP_SCALE * d.s);
+        o.position.set(d.x, 0, d.z);
+        o.rotation.y = d.ry;
+        inner.add(o);
+      }
+    }
     for (const d of extras) {
       const o = this.model(d.m);
       o.scale.setScalar(PROP_SCALE * (d.s || 1));

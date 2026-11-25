@@ -2,7 +2,7 @@ import { View, CELL, pieceCenter, centerOf } from './view.js';
 import { importOPD, exportOPD, isOPD } from './opd.js';
 import { toGeoJSON } from './geojson.js';
 import * as R from './rules.js';
-import { PIECES, ROOMS, STYLES } from './pieces.js';
+import { PIECES, ROOMS, STYLES, COMBOS } from './pieces.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -159,6 +159,7 @@ function refreshGhost() {
       if (e.type === 'room') lines.push(`<span class="b">finishes a ${ROOMS[e.room].name}${e.treasure ? ' with treasure' : ''}</span>`);
       if (e.type === 'deeper') lines.push(`<span class="b">reaches depth ${e.depth}</span>`);
       if (e.type === 'charter') lines.push('<span class="b">fulfils a charter</span>');
+      if (COMBOS[e.type]) lines.push(`<span class="b">founds ${e.type === 'academy' ? 'an' : 'the'} ${COMBOS[e.type].name}</span>`);
     }
     const n = opts.length > 1 ? `<span class="n">${(optIdx % opts.length + opts.length) % opts.length + 1}/${opts.length}</span>` : '';
     tip.innerHTML = `<span class="pts">+${p.pts}</span>${n}${lines.join('')}`;
@@ -239,12 +240,22 @@ function react(events) {
       delay += 0.5;
       const name = ROOMS[e.room].name;
       floater(at(e.id), e.treasure ? `${name} · treasure!` : name, 'build', delay);
-      toast(`<b>${name}</b> finished${e.treasure ? ', with treasure' : ''} · +${e.pts}${piecesText(e.tiles)}`);
+      toast(`<b>${name}</b> finished${e.treasure ? ', with treasure' : ''}${e.find ? ' (bought by the Society)' : ''} · +${e.pts}${piecesText(e.tiles)}`);
+    }
+    if (COMBOS[e.type]) {
+      // An Academy or an Archaeological Society: shown over each of its rooms.
+      delay += 0.5;
+      const name = COMBOS[e.type].name;
+      for (const id of e.ids) floater(at(id), name, 'build', delay);
+      const why = e.type === 'academy'
+        ? 'scholars gather between the library and the shrine'
+        : 'every treasure found from now on is worth more';
+      toast(`<b>${name}</b> founded: ${why} · +${e.pts}${piecesText(e.tiles)}`);
     }
     if (e.type === 'charter') toast(`Charter fulfilled: ${e.text} · <b>+${e.pts}</b>${piecesText(e.tiles)}`);
   }
   bump('score');
-  if (events.some((e) => e.type === 'room' || e.type === 'charter')) bump('supply');
+  if (events.some((e) => e.type === 'room' || e.type === 'charter' || COMBOS[e.type])) bump('supply');
 }
 
 // ---------- HUD ----------
@@ -449,7 +460,7 @@ function showOver() {
   $('finalScore').textContent = state.score;
   $('finalBest').textContent = best === state.score && state.score > 0 ? 'A new best delve!' : `Best delve: ${best}`;
   const s = state.stats;
-  $('finalStats').innerHTML = `<li>${s.placed} pieces laid · depth ${state.maxDepth}</li><li>${s.rooms} rooms finished</li><li>${s.treasure} treasures found</li><li>${s.charters} quests fulfilled</li><li>Seed <code>${state.seed}</code></li>`;
+  $('finalStats').innerHTML = `<li>${s.placed} pieces laid · depth ${state.maxDepth}</li><li>${s.rooms} rooms finished</li><li>${s.treasure} treasures found</li>${s.academies || s.societies ? `<li>${s.academies || 0} ${s.academies === 1 ? 'Academy' : 'Academies'} · ${s.societies || 0} Archaeological ${s.societies === 1 ? 'Society' : 'Societies'}</li>` : ''}<li>${s.charters} quests fulfilled</li><li>Seed <code>${state.seed}</code></li>`;
   $('over').hidden = false;
 }
 

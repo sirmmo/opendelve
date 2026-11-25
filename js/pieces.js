@@ -24,6 +24,12 @@ export const PIECES = {
   large: { model: 'room-large', w: 5, h: 5, doors: [[4, 2, E], [2, 4, S], [0, 2, W], [2, 0, N]], room: 'hall' },
   large_b: { model: 'room-large-variation', w: 5, h: 5, doors: [[4, 2, E], [2, 4, S], [0, 2, W], [2, 0, N]], room: 'hall' },
 
+  // Ancient rooms: the same Kenney rooms, standing in the ruins of an older people
+  // (js/ruins.js dresses them with Quaternius' ruins).
+  library: { model: 'room-wide-variation', w: 5, h: 3, doors: [[4, 1, E], [0, 1, W]], room: 'library' },
+  shrine: { model: 'room-corner', w: 3, h: 3, doors: [[0, 1, W], [1, 0, N]], room: 'shrine' },
+  gallery: { model: 'room-wide', w: 5, h: 3, doors: [[4, 1, E], [2, 2, S], [0, 1, W], [2, 0, N]], room: 'gallery' },
+
   // The way in: stairs coming down from the surface, open to the north.
   stairs: { model: 'stairs', w: 1, h: 2, doors: [[0, 0, N]], room: null },
 
@@ -40,22 +46,40 @@ export const BAG = [
   { kind: 'junction', w: 6 },
   { kind: 'crossing', w: 2.5 },
   { kind: 'deadend', w: 3.5 },
-  { kind: 'small', w: 5 },
-  { kind: 'small_b', w: 3 },
-  { kind: 'cornerroom', w: 4.5 },
-  { kind: 'wide', w: 3 },
+  { kind: 'small', w: 4.5 },
+  { kind: 'small_b', w: 2.5 },
+  { kind: 'cornerroom', w: 3.5 },
+  { kind: 'wide', w: 2.5 },
   { kind: 'wide_b', w: 2 },
   { kind: 'large', w: 1.4 },
   { kind: 'large_b', w: 1 },
+  { kind: 'library', w: 2 },
+  { kind: 'shrine', w: 2.5 },
+  { kind: 'gallery', w: 1.6 },
 ];
 
-// A room with every door joined is finished and gets furnished.
+// A room with every door joined is finished and gets furnished. Ancient rooms are found already
+// in ruins; finished, they give up their finds.
 export const ROOMS = {
   storeroom: { name: 'Storeroom', pts: 6, tiles: 1 },
   guardroom: { name: 'Guardroom', pts: 6, tiles: 1 },
-  armoury: { name: 'Armoury', pts: 10, tiles: 1 },
+  armoury: { name: 'Armoury', pts: 10, tiles: 1, plural: 'Armouries' },
   crypt: { name: 'Crypt', pts: 10, tiles: 1 },
   hall: { name: 'Great hall', pts: 16, tiles: 2 },
+  library: { name: 'Lost library', pts: 10, tiles: 1, ancient: true, plural: 'Lost libraries' },
+  shrine: { name: 'Shrine', pts: 8, tiles: 1, ancient: true },
+  gallery: { name: 'Fallen gallery', pts: 12, tiles: 1, ancient: true, plural: 'Fallen galleries' },
+};
+
+// Ancient rooms near each other found societies of scholars. Distances are counted in steps
+// from piece to piece through joined doors (a room next door is 1 step away).
+// Academy: a finished lost library and a finished shrine within REACH of each other.
+// Archaeological Society: a finished fallen gallery with a finished lost library and a finished
+// crypt (the dig) each within REACH of it. From then on every treasure found is worth FIND more.
+// A room joins at most one Academy and at most one Society.
+export const COMBOS = {
+  academy: { name: 'Academy', pts: 15, tiles: 1, reach: 3 },
+  society: { name: 'Archaeological Society', pts: 22, tiles: 2, reach: 3, find: 6 },
 };
 
 // Rooms finished this deep hold treasure.

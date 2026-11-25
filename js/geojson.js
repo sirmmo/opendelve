@@ -69,6 +69,7 @@ export function toGeoJSON(state, { origin = [0, 0], metersPerCell = 1.5 } = {}) 
     features.push(feature(poly(cellsOf(p)), {
       layer: 'piece', id: p.id, kind: p.kind, style: p.style, rotation: (p.rot || 0) * 90,
       room: room ? ROOMS[room].name : null, finished: !!p.done, treasure: !!p.treasure,
+      academy: p.academy || null, society: p.society || null,
       depth: depth[p.id] ?? null, door: p.door ? p.door.type : null, ending: !!p.rect?.ending,
     }));
   }

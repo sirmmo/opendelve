@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { newGame, place, discard, legalSpots, freePorts, depths, pieceCells, key, choose, START_SUPPLY } from '../js/rules.js';
+import { newGame, place, discard, legalSpots, freePorts, depths, pieceCells, key, choose, START_SUPPLY, optionsAt, pieceAt } from '../js/rules.js';
 import { importOPD, exportOPD, isOPD, DOOR } from '../js/opd.js';
 import { toGeoJSON } from '../js/geojson.js';
 
@@ -116,6 +116,37 @@ test('a delve exports in the generator format and imports back', () => {
   before.delete(key(0, 1));
   assert.deepEqual([...cellSet(back)].sort(), [...before].sort());
   assert.ok(freePorts(back).length >= 1);
+});
+
+test('ancient rooms export their standing columns and their Society', () => {
+  const s = newGame('society-export', { mode: 'sandbox' });
+  const lay = (kind, rot, x, y, cx = x, cy = y) => {
+    choose(s, kind, 'dungeon');
+    const o = optionsAt(s, s.queue[0], cx, cy).find((q) => q.rot === rot && q.x === x && q.y === y);
+    assert.ok(place(s, o.rot, o.x, o.y));
+  };
+  lay('library', 1, -1, -5, 0, -1);
+  lay('gallery', 0, -2, -8, 0, -6);
+  lay('wide_b', 0, 3, -8, 3, -7);
+  lay('corridor', 0, 8, -7);
+  lay('corridor', 0, -3, -7);
+  lay('corridor', 1, 0, -9);
+  assert.equal(s.stats.societies, 1);
+  const out = exportOPD(s);
+  for (const name of ['Lost library', 'Fallen gallery', 'Crypt']) {
+    assert.ok(out.notes.some((n) => n.text.startsWith(name) && n.text.includes('Archaeological Society 1')), name);
+  }
+  // crypt columns plus the gallery's standing ones, all inside the gallery or the crypt
+  const gallery = pieceAt(s, 0, -6);
+  const inGallery = out.columns.filter((c) => c.x > gallery.x && c.x < gallery.x + 5 && c.y > gallery.y && c.y < gallery.y + 3);
+  assert.ok(inGallery.length >= 2 && inGallery.length <= 6, `${inGallery.length} columns stand`);
+  assert.equal(out.columns.length, inGallery.length + 6);
+  // and the map imports back
+  const back = importOPD(JSON.parse(JSON.stringify(out)));
+  assert.equal(Object.keys(back.pieces).length, out.rects.length);
+  const geo = toGeoJSON(s);
+  const props = geo.features.filter((f) => f.properties.layer === 'piece' && f.properties.society).map((f) => f.properties.room).sort();
+  assert.deepEqual(props, ['Crypt', 'Fallen gallery', 'Lost library']);
 });
 
 test('the dungeon exports as valid GeoJSON', () => {

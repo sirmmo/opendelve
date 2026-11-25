@@ -11,6 +11,7 @@
 // The floor is the union of the rects: rects that touch are open to each other.
 
 import { PIECES, ROOMS } from './pieces.js';
+import { ruinDressing, CELL } from './ruins.js';
 import { emptyGame, finishSetup, key, DX, DY, shapeOf, depths, pieceAt } from './rules.js';
 
 export const DOOR = { EMPTY: 0, NORMAL: 1, ARCHWAY: 2, STAIRS: 3, PORTCULLIS: 4, SPECIAL: 5, SECRET: 6, BARRED: 7, EXIT: 8, STEPS: 9 };
@@ -102,6 +103,11 @@ const COLUMNS = {
   crypt: [[-1.2, -0.7], [0, -0.7], [1.2, -0.7], [-1.2, 0.7], [0, 0.7], [1.2, 0.7]],
 };
 
+// The columns still standing in an ancient room (js/ruins.js places them in world units).
+function columnsOf(p) {
+  return ruinDressing(p).ruin.filter((d) => d.m === 'ruins/Column_Round').map((d) => [d.x / CELL, d.z / CELL]);
+}
+
 function turn([x, y], rot) {
   for (let i = 0; i < rot; i++) [x, y] = [-y, x];
   return [x, y];
@@ -172,9 +178,10 @@ export function exportOPD(state) {
     const cx = p.x + L.w / 2;
     const cy = p.y + L.h / 2;
     const d = depth[p.id] ?? 0;
-    const text = `${ROOMS[room].name}${p.treasure ? ', its treasure kept behind a portcullis' : ''}. Depth ${d}.`;
+    const seat = [p.academy && `seat of Academy ${p.academy}`, p.society && `a dig of Archaeological Society ${p.society}`].filter(Boolean);
+    const text = `${ROOMS[room].name}${seat.length ? `, ${seat.join(' and ')}` : ''}${p.treasure ? ', its treasure kept behind a portcullis' : ''}. Depth ${d}.`;
     notes.push({ text, ref: String(++ref), pos: { x: cx, y: cy } });
-    for (const c of COLUMNS[room] || []) {
+    for (const c of COLUMNS[room] || columnsOf(p)) {
       const [dx, dy] = turn(c, p.rot);
       columns.push({ x: round2(cx + dx), y: round2(cy + dy) });
     }
