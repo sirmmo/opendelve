@@ -781,7 +781,7 @@ for (const id of ['help', 'menu']) {
 // ---------- boot ----------
 
 async function boot() {
-  await view.load((k) => { $('loadbar').style.width = `${Math.round(k * 100)}%`; });
+  await view.load((k) => { $('loadbar').style.width = `${Math.round(k * 100)}%`; window.WavedashHook?.progress(k); });
   const params = new URLSearchParams(location.search);
   const urlSeed = params.get('seed');
   // ?mode=sandbox opens the sandbox; without a seed in the link, carry on in the last mode played.
@@ -790,6 +790,7 @@ async function boot() {
   if (saved) resume(saved, store.get(slot(mode) + 'undo'));
   else startGame(urlSeed || randomSeed(), mode);
   $('loading').hidden = true;
+  window.WavedashHook?.ready(); // on Wavedash: loaded, show the game
   $('hud').hidden = false;
   insets();
   view.shift = view.shiftGoal;
@@ -801,5 +802,6 @@ async function boot() {
 
 boot().catch((err) => {
   console.error(err);
+  window.WavedashHook?.ready(); // show the error, not Wavedash's loading screen
   $('loading').innerHTML = `<div class="title">OpenDelve</div><p>Could not open the dungeon: ${String(err.message || err)}</p>`;
 });
