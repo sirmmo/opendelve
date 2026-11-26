@@ -2,7 +2,7 @@
 // comes from the seeded generator inside it, so a seed always plays out the same way and a
 // game can be saved, restored and undone by copying the object.
 
-import { PIECES, BAG, ROOMS, STYLES, TREASURE, TREASURE_DEPTH, COMBOS } from './pieces.js';
+import { PIECES, BAG, ROOMS, STYLES, TREASURE, TREASURE_DEPTH, COMBOS, HOMES, HOME_REACH, HOSTILE_REACH, HOSTILE, MOBS } from './pieces.js';
 
 export const DX = [1, 0, -1, 0];
 export const DY = [0, 1, 0, -1];
@@ -308,7 +308,7 @@ export function emptyGame(seed = String(Date.now() % 1e9), opts = {}) {
     nextCharter: 1,
     last: null,
     over: false,
-    stats: { placed: 0, discarded: 0, rooms: 0, treasure: 0, charters: 0, academies: 0, societies: 0 },
+    stats: { placed: 0, discarded: 0, rooms: 0, treasure: 0, charters: 0, academies: 0, societies: 0, mobs: 0 },
   };
 }
 
@@ -340,7 +340,7 @@ function addPiece(state, piece, rot, x, y) {
 }
 
 function freshPiece(state, kind, style) {
-  return { kind, style, v: Math.floor(rand(state) * 1e6) };
+  return { kind, style: PIECES[kind].style || style, v: Math.floor(rand(state) * 1e6) };
 }
 
 // Pieces brought by rewards. A sandbox's supply never changes.
@@ -352,8 +352,9 @@ function draw(state) {
   let piece;
   for (let i = 0; i < 4; i++) {
     const kind = pick(state, BAG).kind;
-    const style = rand(state) < 0.58 ? 'dungeon' : 'cave';
-    piece = { kind, style, v: Math.floor(rand(state) * 1e6) };
+    const roll = rand(state) < 0.58 ? 'dungeon' : 'cave';
+    // Homes keep to their own style.
+    piece = { kind, style: PIECES[kind].style || roll, v: Math.floor(rand(state) * 1e6) };
     if (legalSpots(state, piece).length) break;
   }
   return piece;
@@ -437,6 +438,7 @@ export function place(state, rot, x, y) {
   }
 
   checkCombos(state, events);
+  checkHomes(state, events);
   checkCharters(state, events);
   refill(state);
   if (state.over) events.push({ type: 'over', score: state.score });
@@ -461,6 +463,7 @@ export function discard(state) {
 export function choose(state, kind, style = state.queue[0]?.style || 'dungeon') {
   if (!isSandbox(state) || state.over) return null;
   if (!SANDBOX_KINDS.includes(kind) || !STYLES.includes(style)) return null;
+  style = PIECES[kind].style || style; // homes keep to their own style
   const cur = state.queue[0];
   if (cur && cur.kind === kind && cur.style === style) return cur;
   state.queue = [freshPiece(state, kind, style)];
@@ -511,9 +514,60 @@ function checkCombos(state, events) {
   }
 }
 
+// ---------- monster homes ----------
+
+// The home a finished piece could be: its room's, or a haunt for an ancient room.
+export function homeOf(p) {
+  const room = roomOf(p);
+  if (HOMES[room]) return room;
+  return ROOMS[room]?.ancient ? 'haunt' : null;
+}
+
+// Monsters housed so far (saves from before homes have none).
+export const countMobs = (state, mob) => Object.values(state.pieces)
+  .reduce((n, p) => n + (p.home && (!mob || p.home.mob === mob) ? p.home.n : 0), 0);
+
+// Does `p` (a finished room) have what its home needs nearby, and no enemies too close?
+function canFill(state, p, kind, depth) {
+  const home = HOMES[kind];
+  if (home.depth && (depth[p.id] ?? 0) < home.depth) return false;
+  const near = nearby(state, p, HOME_REACH);
+  const close = near.filter(({ d }) => d <= HOSTILE_REACH).map(({ p: o }) => o);
+  if (kind === 'haunt') return !close.some((o) => o.home);
+  const foe = HOSTILE[home.kin];
+  if (foe && close.some((o) => o.home && HOMES[o.home.kind].kin === foe)) return false;
+  return home.needs.every((alts) => near.some(({ p: o }) => o.done && alts.some((a) =>
+    (a === 'treasure' ? o.treasure : roomOf(o) === a && (!HOMES[a] || o.home)))));
+}
+
+// Fills every home that can be filled, again and again, since one home filling can be what
+// another needs (a vampire wants skeletons or zombies nearby).
+function checkHomes(state, events) {
+  const depth = depths(state);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const p of Object.values(state.pieces)) {
+      if (!p.done || p.home) continue;
+      const kind = homeOf(p);
+      if (!kind || !canFill(state, p, kind, depth)) continue;
+      const home = HOMES[kind];
+      p.home = { kind, mob: home.mob, n: home.n };
+      state.score += home.pts;
+      gain(state, home.tiles);
+      state.stats.mobs = (state.stats.mobs || 0) + home.n;
+      events.push({ type: 'home', id: p.id, home: kind, mob: home.mob, n: home.n, pts: home.pts, tiles: home.tiles });
+      changed = true;
+    }
+  }
+}
+
+export function mobText(mob, n) {
+  return n === 1 ? `a ${MOBS[mob].name.toLowerCase()}` : `${n} ${MOBS[mob].plural.toLowerCase()}`;
+}
+
 // ---------- charters ----------
 
-const CHARTER_KINDS = ['depth', 'rooms', 'cave', 'dungeon', 'hall', 'treasure', 'crypt', 'armoury', 'library', 'academy'];
+const CHARTER_KINDS = ['depth', 'rooms', 'cave', 'dungeon', 'hall', 'treasure', 'crypt', 'armoury', 'library', 'academy', 'mobs', 'warren'];
 
 export function charterProgress(state, c) {
   switch (c.kind) {
@@ -523,6 +577,8 @@ export function charterProgress(state, c) {
     case 'dungeon': return largestStyle(state, 'dungeon');
     case 'treasure': return countTreasure(state);
     case 'academy': return countCombo(state, 'academy');
+    case 'mobs': return countMobs(state);
+    case 'warren': return countMobs(state, 'orc');
     default: return countRooms(state, c.kind);
   }
 }
@@ -536,6 +592,8 @@ export function charterText(c) {
     case 'dungeon': return `Build ${n} stone pieces together`;
     case 'treasure': return n === 1 ? 'Find a treasure' : `Find ${n} treasures`;
     case 'academy': return n === 1 ? 'Found an Academy' : `Found ${n} Academies`;
+    case 'mobs': return `House ${n} monsters`;
+    case 'warren': return `House ${n} orcs`;
     default: {
       const r = ROOMS[c.kind];
       return n === 1 ? `Finish a ${r.name}` : `Finish ${n} ${r.plural || r.name + 's'}`;
@@ -550,6 +608,8 @@ function makeCharter(state, kind) {
   if (kind === 'depth') c.n = now + 4 + Math.floor(r * 3);
   else if (kind === 'rooms') c.n = now + 2 + Math.floor(r * 2);
   else if (kind === 'cave' || kind === 'dungeon') c.n = Math.max(now + 3 + Math.floor(r * 3), 4);
+  else if (kind === 'mobs') c.n = now + 3 + Math.floor(r * 3);
+  else if (kind === 'warren') c.n = now + 4;
   else c.n = now + 1;
   const step = c.n - now;
   c.pts = kind === 'hall' || kind === 'treasure' || kind === 'academy' ? 18 : 10 + 2 * step;

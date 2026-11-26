@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from '../vendor/jsm/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from '../vendor/jsm/utils/SkeletonUtils.js';
 import { PIECES } from './pieces.js';
 import { layout, shapeOf, pieceDoors, pieceAt, depths, DX, DY, key } from './rules.js';
 import { DOOR } from './opd.js';
@@ -22,7 +23,19 @@ const PROPS = ['banner', 'barrel', 'chair', 'character-human', 'character-orc', 
   'shield-rectangle', 'wood-support', 'key', 'stairs'];
 // Treasure from the KayKit Dungeon Pack (glTF sharing one texture), in models/treasure/.
 const TREASURE = ['chest_gold', 'chest_large_gold', 'chest_mimic', 'coin_stack_small', 'coin_stack_medium',
-  'coin_stack_large', 'rocks_gold', 'key_gold'];
+  'coin_stack_large', 'rocks_gold', 'key_gold', 'keg', 'bed_floor'];
+// The monsters and their homes: Kenney's Graveyard Kit (its own colormap) and Nature Kit
+// (plain colours), in models/graveyard/ and models/nature/.
+const GRAVEYARD = ['character-skeleton', 'character-zombie', 'character-ghost', 'character-vampire', 'coffin',
+  'coffin-old', 'gravestone-debris', 'gravestone-broken', 'candle-multiple', 'altar-stone', 'lantern-candle', 'grave'];
+const NATURE = ['mushroom_redGroup', 'mushroom_tanGroup', 'mushroom_redTall', 'mushroom_tanTall', 'campfire_stones', 'log'];
+// Each monster's figure (the orc is Mini Dungeon's, with the props).
+export const MOB_MODEL = {
+  skeleton: 'graveyard/character-skeleton', zombie: 'graveyard/character-zombie', ghost: 'graveyard/character-ghost',
+  vampire: 'graveyard/character-vampire', orc: 'character-orc',
+};
+const NATURE_SCALE = 1.9 / 1.35; // the Nature Kit is drawn smaller than the dungeon props
+const GIANT = NATURE_SCALE * 2.6;
 const KAYKIT = 0.42; // KayKit pieces are about 2.4 times the size of Kenney's props.
 // The ruins pack is dark and olive; repaint its materials in the Kenney kits' pastel palette
 // (lavender stone, warm wood, bright books) and let the candle flames glow.
@@ -114,9 +127,67 @@ function furniture(p, style, R) {
   }
   // Ancient rooms give up their finds (their ruins stand from the moment they are laid).
   if (isAncient(p.kind)) out.push(...toProps(ruinDressing(p).finds));
+  if (HOME_DRESSING[room]) out.push(...HOME_DRESSING[room](R));
   if (p.treasure) out.push(...hoard(room, style, R));
-  if (style === 'cave' && room && room !== 'hall' && !isAncient(p.kind)) add('character-orc', -0.3, 0.4, R() * TAU);
+  if (style === 'cave' && room && room !== 'hall' && !isAncient(p.kind) && !HOME_DRESSING[room]) add('character-orc', -0.3, 0.4, R() * TAU);
+  if (p.home) out.push(...residents(p, R));
   return out;
+}
+
+// Monster homes, furnished when finished (their residents come later, when they move in).
+const G = (m) => `graveyard/${m}`;
+const NAT = (m) => `nature/${m}`;
+const HOME_DRESSING = {
+  ossuary: (R) => [
+    { m: G('coffin'), x: -1.75, z: -1.2, ry: 0 }, { m: G('coffin-old'), x: 1.75, z: -1.2, ry: 0 },
+    { m: G('gravestone-debris'), x: -1.7, z: 1.75, ry: R() * TAU }, { m: G('candle-multiple'), x: 1.8, z: 1.8, ry: R() * TAU },
+    { m: G('altar-stone'), x: 1.75, z: 0.95, ry: Math.PI / 2, s: 0.8 },
+  ],
+  pit: (R) => [
+    { m: G('grave'), x: 0.9, z: 0.9, ry: Math.PI / 4 }, { m: G('grave'), x: 1.75, z: -0.9, ry: R() * 0.4 },
+    { m: G('gravestone-broken'), x: -1.6, z: 1.7, ry: R() * TAU }, { m: G('lantern-candle'), x: 1.9, z: 1.9, ry: R() * TAU },
+  ],
+  coffins: (R) => [
+    { m: G('coffin'), x: -2.8, z: -1.65, ry: Math.PI / 2 }, { m: G('coffin'), x: 2.8, z: -1.65, ry: Math.PI / 2 },
+    { m: G('coffin-old'), x: -2.8, z: 1.65, ry: Math.PI / 2 }, { m: G('altar-stone'), x: 0, z: -1.7, ry: 0 },
+    { m: G('candle-multiple'), x: -1.1, z: -1.85, ry: R() * TAU }, { m: G('candle-multiple'), x: 1.1, z: -1.85, ry: R() * TAU },
+    { m: 'banner', x: 0, z: -2.05 }, { m: G('lantern-candle'), x: 2.9, z: 1.7, ry: R() * TAU },
+  ],
+  warren: (R) => [
+    { m: NAT('campfire_stones'), x: 2.3, z: 2.3, ry: R() * TAU, s: NATURE_SCALE * 1.5 },
+    { m: 'treasure/bed_floor', x: -3.1, z: -3.0, ry: 0, s: KAYKIT }, { m: 'treasure/bed_floor', x: 3.1, z: -3.0, ry: 0, s: KAYKIT },
+    { m: 'treasure/bed_floor', x: -3.1, z: 3.0, ry: Math.PI, s: KAYKIT }, { m: 'treasure/keg', x: 3.6, z: 0.9, ry: R() * TAU, s: KAYKIT },
+    { m: NAT('mushroom_tanGroup'), x: -3.6, z: 0.9, ry: R() * TAU, s: GIANT * 0.8 },
+  ],
+  // Giant mushrooms: the Nature Kit's, grown to knee and waist height.
+  grove: (R) => [
+    { m: NAT('mushroom_redGroup'), x: -1.7, z: -1.7, ry: R() * TAU, s: GIANT },
+    { m: NAT('mushroom_tanTall'), x: 1.75, z: -1.75, ry: R() * TAU, s: GIANT * 1.3 },
+    { m: NAT('mushroom_tanGroup'), x: 1.7, z: 1.7, ry: R() * TAU, s: GIANT },
+    { m: NAT('mushroom_redTall'), x: -1.75, z: 1.75, ry: R() * TAU, s: GIANT * 1.3 },
+    { m: NAT('mushroom_redGroup'), x: 0.95, z: -0.9, ry: R() * TAU, s: GIANT * 0.7 },
+    { m: NAT('mushroom_tanGroup'), x: -1.0, z: -0.35, ry: R() * TAU, s: GIANT * 0.6 },
+    { m: NAT('mushroom_redTall'), x: 0.6, z: 1.1, ry: R() * TAU, s: GIANT * 0.9 },
+    { m: NAT('log'), x: -0.8, z: 1.0, ry: R() * TAU, s: NATURE_SCALE },
+  ],
+};
+
+// Where a home's residents stand (piece frame, unturned): clear of the dressing and the doors.
+const RESIDENTS = {
+  ossuary: [[-0.8, 0.7], [0.8, -0.6], [-0.6, -0.9]],
+  pit: [[-0.7, 0.2], [0.1, -0.9], [-0.4, 1.0]],
+  coffins: [[0, 0.8]],
+  warren: [[-1.6, -1.6], [1.4, 1.5], [-1.5, 1.4], [1.7, -1.4]],
+};
+
+function residents(p, R) {
+  const { mob, n, kind } = p.home;
+  let spots = RESIDENTS[kind];
+  if (kind === 'haunt') {
+    const at = ANCIENT_HOARD[PIECES[p.kind].room];
+    spots = [at.key, at.ore];
+  }
+  return spots.slice(0, n).map(([x, z]) => ({ m: MOB_MODEL[mob], x, z, ry: R() * TAU, mob: true }));
 }
 
 // A treasure room's hoard: a gold chest (the big one in halls and crypts; one chest in eight is a
@@ -238,6 +309,8 @@ export class View {
     for (const m of PROPS) jobs.push([m, `models/props/${m}.glb`, false]);
     for (const m of TREASURE) jobs.push([`treasure/${m}`, `models/treasure/${m}.gltf`, false]);
     for (const m of RUIN_MODELS) jobs.push([`ruins/${m}`, `models/ruins/${m}.glb`, false]);
+    for (const m of GRAVEYARD) jobs.push([`graveyard/${m}`, `models/graveyard/${m}.glb`, false]);
+    for (const m of NATURE) jobs.push([`nature/${m}`, `models/nature/${m}.glb`, false]);
     let done = 0;
     await Promise.all(jobs.map(async ([name, url, kit]) => {
       const gltf = await loader.loadAsync(url);
@@ -268,6 +341,22 @@ export class View {
       onProgress?.(++done / jobs.length);
     }));
     this.thumbs = new Thumbs(this);
+  }
+
+  // A monster standing in its home, breathing (the idle animation, each at its own pace).
+  creature(name, group) {
+    const o = cloneSkinned(this.templates[name]);
+    const clip = this.clips[name]?.find((c) => c.name === 'idle');
+    if (clip) {
+      const mixer = new THREE.AnimationMixer(o);
+      const a = mixer.clipAction(clip);
+      a.time = Math.random() * clip.duration;
+      a.timeScale = 0.8 + Math.random() * 0.4;
+      a.play();
+      (group.userData.mixers ||= []).push(mixer);
+    }
+    o.traverse((m) => { if (m.isMesh) m.frustumCulled = false; });
+    return o;
   }
 
   model(name) {
@@ -354,7 +443,7 @@ export class View {
       }
     }
     for (const d of extras) {
-      const o = this.model(d.m);
+      const o = d.mob ? this.creature(d.m, g) : this.model(d.m);
       o.scale.setScalar(PROP_SCALE * (d.s || 1));
       o.position.set(d.x, 0, d.z);
       o.rotation.y = d.ry || 0;
@@ -373,7 +462,7 @@ export class View {
     for (const p of Object.values(state.pieces)) {
       const k = String(p.id);
       seen.add(k);
-      const vis = [p.kind, p.style, p.rot, p.x, p.y, p.done, p.treasure, p.shape?.doors.length].join('|');
+      const vis = [p.kind, p.style, p.rot, p.x, p.y, p.done, p.treasure, p.shape?.doors.length, p.home?.n].join('|');
       const cur = this.views.get(k);
       if (cur && cur.vis === vis) continue;
       const R = prng(p.v * 7919 + 13);
@@ -418,6 +507,7 @@ export class View {
         gate.rotation.y = d % 2 === 0 ? Math.PI / 2 : 0;
         // The bars are their own part of the model: a walker lifts them (js/walker.js).
         if (p.treasure) gate.userData.bars = gate.getObjectByName('gate');
+        gate.userData.between = [p.id, o.id]; // an adventure shows it once either side is seen
         this.gates.add(gate);
       }
     }
@@ -640,6 +730,7 @@ export class View {
         this.cam.dist += (g.dist - this.cam.dist) * f;
         if (this.cam.target.distanceTo(g.target) < 0.01 && Math.abs(g.dist - this.cam.dist) < 0.02) this.camGoal = null;
       }
+      for (const v of this.views.values()) for (const m of v.group.userData.mixers || []) m.update(dt);
       if (this.ghost?.visible) this.ghost.position.y = 0.25 + Math.sin(now * 3) * 0.08;
       this.markerMat.opacity = 0.2 + Math.sin(now * 2.5) * 0.08;
       if (this.driver) this.driver(dt);

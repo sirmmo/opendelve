@@ -68,11 +68,21 @@
 
   <div id="walkbar" class="card" hidden>
     <div class="where"><b id="walkWhere"></b><span id="walkDepth"></span></div>
-    <div class="hint keys"><kbd>WASD</kbd> walk · <kbd>Shift</kbd> run · <kbd>Q</kbd> <kbd>E</kbd> or drag to turn the view · up the stairs to dig again</div>
+    <div class="hint keys walk-only"><kbd>WASD</kbd> walk · <kbd>Shift</kbd> run · <kbd>Q</kbd> <kbd>E</kbd> or drag to turn the view · up the stairs to dig again</div>
+    <div class="hint keys adv-only"><kbd>WASD</kbd> walk · <kbd>Shift</kbd> run · <kbd>Space</kbd> or click to strike · drag to turn the view · up the stairs to leave</div>
     <div class="hint thumbs">Thumb anywhere to walk, push further to run · two fingers turn the view</div>
-    <button class="btn" id="bWalkBack">Back to digging</button>
+    <button class="btn" id="bWalkBack"><span class="walk-only">Back to digging</span><span class="adv-only">Leave the dungeon</span></button>
   </div>
   <div id="stick" hidden><i></i></div>
+
+  <div id="advHud" class="card" hidden>
+    <div id="advHearts" role="img"></div>
+    <div class="stat"><span class="lbl">Slain</span><b id="advSlain">0/0</b></div>
+    <div class="stat"><span class="lbl">Gold</span><b id="advGold">0</b></div>
+    <button class="icon" id="bAdvMenu" title="Menu (Esc)" aria-label="Menu">☰</button>
+  </div>
+  <button id="bAttack" aria-label="Strike" title="Strike (Space)" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 3.5l-9 9M17 3h3.5v3.5M10.5 12.5l1 1M7.5 13.5l3 3M6 18l2.2-2.2M4.6 19.4l-1 1"/></svg></button>
+  <div id="hurt"></div>
 
   <div id="tip" hidden></div>
   <div id="toasts"></div>
@@ -86,6 +96,7 @@
       <li><b>Dig from the stairs.</b> Lay each piece against an open doorway (the glowing squares). Doors must meet doors and walls must meet walls. You can't seal the last way on while pieces remain.</li>
       <li><b>Finish rooms.</b> When every door of a room leads somewhere, it gets furnished: a <i>storeroom</i>, <i>guardroom</i>, <i>armoury</i>, <i>crypt</i> or <i>great hall</i>. Rooms finished from depth 9 down also hold <i>treasure</i>.</li>
       <li><b>Ancient rooms.</b> Some rooms come already in ruins: a <i>lost library</i> (shelves, open at both ends), a <i>shrine</i> (a statue in the corner) and a <i>fallen gallery</i> (broken columns under an arch). Finish them like any room. A finished library and shrine at most 3 steps apart found an <b>Academy</b> (+15, +1 piece). A finished gallery with a finished library and a finished crypt each at most 3 steps from it found an <b>Archaeological Society</b> (+22, +2 pieces), and from then on every treasure is worth 6 more. A step is one door from piece to piece.</li>
+      <li><b>Monster homes.</b> An <i>ossuary</i> houses 3 skeletons once a crypt or storeroom is near; a <i>burial pit</i> 3 zombies (a storeroom, and a crypt or filled ossuary, near); a <i>coffin hall</i> a vampire (a treasure room and a filled ossuary or pit near); an <i>orc warren</i> 4 orcs (a <i>mushroom grove</i> and an armoury or guardroom near). Deep ancient rooms with no home close by are haunted by ghosts. Near means at most 3 steps; orcs and the dead won't settle within 2 steps of each other.</li>
       <li><b>Delve deep.</b> Depth is the number of pieces between a room and the stairs. Reaching a new depth is worth glory, and doors that join the same style (stone or cave) are worth more.</li>
       <li><b>Finished rooms and quests bring new pieces.</b> When the last piece is laid, the delve is over.</li>
       <li><b>Sandbox.</b> From the menu, start a sandbox and choose every piece yourself from the tray at the bottom, stone or cave. Pieces never run out; it has its own save, so your delve waits for you.</li>
@@ -95,11 +106,12 @@
       <div><b>Mouse</b> · click a glowing square to lay · <kbd>R</kbd> or right click for the next way it fits · drag to move · right drag to rotate the view · wheel to zoom</div>
       <div><b>Touch</b> · tap a spot, tap again to lay · ⟲ ⟳ for the next way it fits · drag, pinch and twist the view</div>
       <div><b>Keys</b> · <kbd>Z</kbd> undo · <kbd>X</kbd> discard · <kbd>C</kbd> center · <kbd>Q</kbd>/<kbd>E</kbd> rotate the view · <kbd>WASD</kbd> move</div>
+      <div><b>Adventure</b> · from the menu: explore a dungeon in the dark and clear it of monsters · <kbd>Space</kbd>, a click or the sword button to strike · chests give gold and every heart back</div>
       <div><b>Walk</b> · the walking figure (or <kbd>V</kbd>) puts an adventurer at the foot of the stairs · <kbd>WASD</kbd> or a thumb to walk, <kbd>Shift</kbd> to run · climb the stairs, or <kbd>Esc</kbd>, to dig again</div>
       <div><b>Sandbox</b> · click or tap a piece in the tray · <kbd>[</kbd> <kbd>]</kbd> previous and next piece · <kbd>T</kbd> stone or cave</div>
     </div>
     <button class="btn" id="bHelpClose">Start digging</button>
-    <p class="credits">Models: Modular Dungeon Kit, Modular Cave Kit and Mini Dungeon by Kenney, Dungeon Pack by Kay Lousberg, Ultimate Modular Ruins Pack by Quaternius (all CC0). Code: GPL-3.0.</p>
+    <p class="credits">Models: Modular Dungeon Kit, Modular Cave Kit, Mini Dungeon, Graveyard Kit and Nature Kit by Kenney, Dungeon Pack by Kay Lousberg, Ultimate Modular Ruins Pack by Quaternius (all CC0). Code: GPL-3.0.</p>
   </div>
 </div>
 
@@ -116,6 +128,13 @@
     <button class="btn alt" id="bSandboxContinue" hidden>Continue the sandbox</button>
     <button class="btn alt" id="bSandbox">Sandbox (choose every piece)</button>
     <p class="hint">Choose every piece yourself, as many as you like. The sandbox saves apart from your delve.</p>
+    <h3>Adventure</h3>
+    <button class="btn alt" id="bAdventureContinue" hidden>Continue the adventure</button>
+    <button class="btn alt" id="bAdventureLeave" hidden>Leave the dungeon</button>
+    <button class="btn alt" id="bAdventure">New adventure</button>
+    <button class="btn alt" id="bAdventureDaily">Today's adventure</button>
+    <button class="btn alt" id="bAdventureHere">Adventure in this dungeon</button>
+    <p class="hint">Explore a dungeon in the dark, sword in hand, and clear it of its monsters. The adventure saves apart from your delve.</p>
     <h3>Maps</h3>
     <button class="btn alt" id="bImport">Import a One Page Dungeon map…</button>
     <button class="btn alt" id="bExportOPD">Export as One Page Dungeon JSON</button>
@@ -138,7 +157,19 @@
     <button class="btn alt" id="bOverOPD">Export as One Page Dungeon JSON</button>
     <button class="btn alt" id="bOverGeo">Download map (GeoJSON)</button>
     <button class="btn alt" id="bOverWalk">Walk the dungeon</button>
+    <button class="btn alt" id="bOverAdventure">Adventure in this dungeon</button>
     <button class="btn ghost" id="bOverLook">Look at the dungeon</button>
+  </div>
+</div>
+
+<div id="advOver" class="overlay" hidden>
+  <div class="sheet small">
+    <h2 id="advOverTitle"></h2>
+    <p id="advOverText"></p>
+    <ul id="advOverStats"></ul>
+    <button class="btn" id="bAdvRetry">Try again</button>
+    <button class="btn alt" id="bAdvNew">New adventure</button>
+    <button class="btn ghost" id="bAdvBack">Back to digging</button>
   </div>
 </div>
 

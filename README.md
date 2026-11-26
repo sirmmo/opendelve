@@ -30,12 +30,27 @@ engine and three.js view, on a square grid with pieces that cover several cells.
    - **Archaeological Society:** a finished fallen gallery with a finished lost library and a
      finished crypt (the dig) each at most 3 steps from it. +22 glory and +2 pieces, and from
      then on every treasure found is worth 6 more.
-4. **Delve deep.** A piece's depth is how many doors you pass from the stairs to reach it.
+4. **Monster homes.** Some rooms are homes, and their monsters move in once what they need
+   is near (at most 3 steps, a step being one door from piece to piece), each worth glory and
+   pieces:
+   - **Ossuary** (stone, 3×3): 3 skeletons, once a crypt or a storeroom is near.
+   - **Burial pit** (cave, 3×3, two doors): 3 zombies, with a storeroom near and a crypt or a
+     filled ossuary.
+   - **Coffin hall** (stone, 5×3): a vampire, with a treasure room near and a filled ossuary or
+     burial pit.
+   - **Orc warren** (cave, 5×5): 4 orcs, with a **mushroom grove** (cave, 3×3: giant mushrooms,
+     their food) and an armoury or guardroom near.
+   - **Haunts:** a finished ancient room from depth 6 down, with no filled home within 2 steps,
+     is haunted by 2 ghosts, who like the quiet.
+
+   Orcs and the dead won't settle within 2 steps of each other's homes: a home waits until it can
+   fill, and a filled home never empties. Quests may ask you to house monsters, or orcs.
+5. **Delve deep.** A piece's depth is how many doors you pass from the stairs to reach it.
    Every new depth is worth glory, and doors joining two pieces of the same style (stone or
    cave) are worth more than mixed ones.
-5. **Quests** set three goals at a time (reach depth 12, finish a crypt, open a cavern of six
+6. **Quests** set three goals at a time (reach depth 12, finish a crypt, open a cavern of six
    pieces, found an Academy…).
-6. **Pieces run out.** You start with 45; finished rooms and quests bring more. When the last
+7. **Pieces run out.** You start with 45; finished rooms and quests bring more. When the last
    piece is laid, the delve is over.
 
 Glory per piece: +2 for each door joined (+3 if both pieces are the same style), +3 for each
@@ -48,6 +63,19 @@ ends; doors, depth, rooms, treasure, glory and quests work as in the normal game
 works. The sandbox has its own save, so it never overwrites your delve: *Back to the delve* and
 *Continue the sandbox* switch between them (`?mode=sandbox` opens it). A One Page Dungeon map
 imported while in the sandbox becomes a sandbox too.
+
+**Adventure.** Menu → *New adventure* (or *Today's adventure*, or *Adventure in this dungeon*,
+also on the end screen) digs a dungeon of about 60 pieces from a seed, or takes your delve, and
+puts you at the foot of its stairs in the dark: each room appears as you walk into it, with the
+rooms through its doors. Its monsters live where they would: every home's residents, skeletons
+and zombies in crypts and stone halls, orcs in caves and armouries, ghosts in ancient rooms,
+something prowling a corridor now and then, a vampire guarding a deep treasure; the first rooms
+past the stairs are quiet. They notice you when you come near, follow you round corners and
+through doors, and strike when they reach you. You have 10 hearts and a sword (`Space`, a
+click, or the sword button on a touch screen; it turns to the nearest monster). Monsters drop
+gold; each treasure room's chest gives 25 gold and every heart back, and a mushroom grove 4
+hearts, once. Slay every monster to clear the dungeon. Climb the stairs to leave: the adventure
+saves apart from your delve, and *Continue the adventure* takes you back where you were.
 
 **Walk the dungeon.** The walking figure at the top right (or `V`, or *Walk the dungeon* when
 the delve is over) puts an adventurer at the foot of the stairs, with a torch and a camera that
@@ -112,7 +140,7 @@ Plain HTML, CSS and JavaScript modules. No build step and no dependencies at run
 
 ```sh
 python3 -m http.server 8000      # then open http://localhost:8000
-npm test                          # rules, walking, map import/export tests (Node 20+)
+npm test                          # rules, homes, adventures, walking, map import/export tests (Node 20+)
 OPD_SAMPLE=map.json npm test      # also check a real One Page Dungeon export
 node tools/balance.mjs 1 2 3      # greedy games per seed: length, score, rooms
 ```
@@ -127,17 +155,21 @@ node tools/balance.mjs 1 2 3      # greedy games per seed: length, score, rooms
 | `js/geojson.js`, `js/geo.js` | GeoJSON export: projection and merging cells into outlines |
 | `js/walk.js` | Walking, the pure part: which sides of each cell lead on (joined doors), where a walk starts, the stairs' ramp |
 | `js/walker.js` | Walking in 3D: a top-down height map of the laid pieces (drawn once on the GPU) for what is in the way, the animated adventurer, the follow camera, the lifting bars |
-| `js/main.js` | Input, HUD, sandbox tray, walking controls, saving, undo, file import and downloads |
+| `js/adventure.js` | Adventures, the pure part: digging one from a seed, who lives where, the hearts, reach and speed of everyone |
+| `js/fight.js` | Adventures in 3D: the monsters (animated, chasing along a distance map of the floor), the sword, chests and groves, the dark over unseen rooms |
+| `js/main.js` | Input, HUD, sandbox tray, walking and adventure controls, saving, undo, file import and downloads |
 | `tools/ports.py` | Measures each Kenney piece's footprint and doors from its mesh (`tools/glb.py` reads GLB) |
-| `models/` | The models the game uses: Kenney's `dungeon/`, `cave/` and `props/`, KayKit's `treasure/`, each with its texture, and Quaternius' `ruins/` (GLB, material colours, repainted in the Kenney palette at load) |
+| `models/` | The models the game uses: Kenney's `dungeon/`, `cave/`, `props/` and `graveyard/` (the monsters, coffins and graves), each with its texture, and `nature/` (mushrooms, a campfire, a log; plain colours), KayKit's `treasure/` (treasure, beds, a keg), and Quaternius' `ruins/` (GLB, material colours, repainted in the Kenney palette at load) |
 
 The modular kits' wide corridors sit half a cell off the grid that rooms and narrow corridors
 share, so they are left out.
 
 ## Credits
 
-- 3D models by [Kenney](https://kenney.nl), CC0: Modular Dungeon Kit, Modular Cave Kit, Mini Dungeon.
-- Treasure (gold chests, the mimic, coin stacks, gold keys and ore) from the KayKit Dungeon Pack by
+- 3D models by [Kenney](https://kenney.nl), CC0: Modular Dungeon Kit, Modular Cave Kit, Mini Dungeon,
+  Graveyard Kit (the skeleton, zombie, ghost and vampire, coffins, graves), Nature Kit (mushrooms,
+  the campfire, a log).
+- Treasure (gold chests, the mimic, coin stacks, gold keys and ore), beds and a keg from the KayKit Dungeon Pack by
   [Kay Lousberg](https://www.kaylousberg.com), CC0.
 - Ruins (columns, the arch, statues, bookcases, pots, candles, bricks, the skull) from the
   Ultimate Modular Ruins Pack by [Quaternius](https://quaternius.com), CC0

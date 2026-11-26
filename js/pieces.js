@@ -30,6 +30,14 @@ export const PIECES = {
   shrine: { model: 'room-corner', w: 3, h: 3, doors: [[0, 1, W], [1, 0, N]], room: 'shrine' },
   gallery: { model: 'room-wide', w: 5, h: 3, doors: [[4, 1, E], [2, 2, S], [0, 1, W], [2, 0, N]], room: 'gallery' },
 
+  // Monster homes: rooms that monsters move into once what they need is near (HOMES below).
+  // Each keeps to one style: the dead to dressed stone, orcs and their mushrooms to caves.
+  ossuary: { model: 'room-small-variation', w: 3, h: 3, doors: [[2, 1, E], [1, 2, S], [0, 1, W], [1, 0, N]], room: 'ossuary', style: 'dungeon' },
+  pit: { model: 'room-corner', w: 3, h: 3, doors: [[0, 1, W], [1, 0, N]], room: 'pit', style: 'cave' },
+  coffins: { model: 'room-wide-variation', w: 5, h: 3, doors: [[4, 1, E], [0, 1, W]], room: 'coffins', style: 'dungeon' },
+  warren: { model: 'room-large-variation', w: 5, h: 5, doors: [[4, 2, E], [2, 4, S], [0, 2, W], [2, 0, N]], room: 'warren', style: 'cave' },
+  grove: { model: 'room-small', w: 3, h: 3, doors: [[2, 1, E], [1, 2, S], [0, 1, W], [1, 0, N]], room: 'grove', style: 'cave' },
+
   // The way in: stairs coming down from the surface, open to the north.
   stairs: { model: 'stairs', w: 1, h: 2, doors: [[0, 0, N]], room: null },
 
@@ -56,6 +64,11 @@ export const BAG = [
   { kind: 'library', w: 2 },
   { kind: 'shrine', w: 2.5 },
   { kind: 'gallery', w: 1.6 },
+  { kind: 'ossuary', w: 1.6 },
+  { kind: 'pit', w: 1.4 },
+  { kind: 'coffins', w: 0.9 },
+  { kind: 'warren', w: 0.9 },
+  { kind: 'grove', w: 1.8 },
 ];
 
 // A room with every door joined is finished and gets furnished. Ancient rooms are found already
@@ -69,6 +82,35 @@ export const ROOMS = {
   library: { name: 'Lost library', pts: 10, tiles: 1, ancient: true, plural: 'Lost libraries' },
   shrine: { name: 'Shrine', pts: 8, tiles: 1, ancient: true },
   gallery: { name: 'Fallen gallery', pts: 12, tiles: 1, ancient: true, plural: 'Fallen galleries' },
+  ossuary: { name: 'Ossuary', pts: 6, tiles: 1, plural: 'Ossuaries' },
+  pit: { name: 'Burial pit', pts: 6, tiles: 1 },
+  coffins: { name: 'Coffin hall', pts: 8, tiles: 1 },
+  warren: { name: 'Orc warren', pts: 10, tiles: 1 },
+  grove: { name: 'Mushroom grove', pts: 6, tiles: 1 },
+};
+
+// Who lives where. A finished home fills once each of its `needs` (a list of alternatives) is
+// met by a finished room within HOME_REACH steps: a room type, 'treasure' (any treasure room),
+// or another home that has filled. Orcs and the dead won't settle within HOSTILE_REACH steps of
+// each other's homes; a home waits until it can fill, and a filled home never empties. A
+// finished ancient room from depth 6 down with no filled home within HOSTILE_REACH is haunted
+// by ghosts, who like the quiet and the dark. Every monster that moves in is worth glory.
+export const HOME_REACH = 3;
+export const HOSTILE_REACH = 2;
+export const HOMES = {
+  ossuary: { mob: 'skeleton', n: 3, pts: 8, tiles: 1, kin: 'dead', needs: [['crypt', 'storeroom']] },
+  pit: { mob: 'zombie', n: 3, pts: 8, tiles: 1, kin: 'dead', needs: [['storeroom'], ['crypt', 'ossuary']] },
+  coffins: { mob: 'vampire', n: 1, pts: 14, tiles: 1, kin: 'dead', needs: [['treasure'], ['ossuary', 'pit']] },
+  warren: { mob: 'orc', n: 4, pts: 12, tiles: 2, kin: 'orc', needs: [['grove'], ['armoury', 'guardroom']] },
+  haunt: { mob: 'ghost', n: 2, pts: 6, tiles: 0, kin: 'spirit', needs: [], depth: 6 },
+};
+export const HOSTILE = { dead: 'orc', orc: 'dead' };
+export const MOBS = {
+  skeleton: { name: 'Skeleton', plural: 'Skeletons' },
+  zombie: { name: 'Zombie', plural: 'Zombies' },
+  vampire: { name: 'Vampire', plural: 'Vampires' },
+  orc: { name: 'Orc', plural: 'Orcs' },
+  ghost: { name: 'Ghost', plural: 'Ghosts' },
 };
 
 // Ancient rooms near each other found societies of scholars. Distances are counted in steps

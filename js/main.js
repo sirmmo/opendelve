@@ -1,9 +1,11 @@
 import { View, CELL, pieceCenter, centerOf } from './view.js';
 import { Walker } from './walker.js';
+import { Fight } from './fight.js';
+import { dig, populate } from './adventure.js';
 import { importOPD, exportOPD, isOPD } from './opd.js';
 import { toGeoJSON } from './geojson.js';
 import * as R from './rules.js';
-import { PIECES, ROOMS, STYLES, COMBOS } from './pieces.js';
+import { PIECES, ROOMS, STYLES, COMBOS, HOMES } from './pieces.js';
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -49,6 +51,7 @@ function setURL(seed) {
 const sandbox = () => !!state && R.isSandbox(state);
 
 function startGame(seed, mode) {
+  dropAdventure();
   stopWalk(false);
   state = R.newGame(seed, { mode });
   undoJSON = null;
@@ -65,6 +68,7 @@ function startGame(seed, mode) {
 }
 
 function resume(saved, undo) {
+  dropAdventure();
   stopWalk(false);
   state = saved;
   undoJSON = undo || null;
@@ -163,6 +167,7 @@ function refreshGhost() {
       if (e.type === 'deeper') lines.push(`<span class="b">reaches depth ${e.depth}</span>`);
       if (e.type === 'charter') lines.push('<span class="b">fulfils a charter</span>');
       if (COMBOS[e.type]) lines.push(`<span class="b">founds ${e.type === 'academy' ? 'an' : 'the'} ${COMBOS[e.type].name}</span>`);
+      if (e.type === 'home') lines.push(`<span class="b">${R.mobText(e.mob, e.n)} move${e.n === 1 ? 's' : ''} in</span>`);
     }
     const n = opts.length > 1 ? `<span class="n">${(optIdx % opts.length + opts.length) % opts.length + 1}/${opts.length}</span>` : '';
     tip.innerHTML = `<span class="pts">+${p.pts}</span>${n}${lines.join('')}`;
@@ -255,10 +260,17 @@ function react(events) {
         : 'every treasure found from now on is worth more';
       toast(`<b>${name}</b> founded: ${why} · +${e.pts}${piecesText(e.tiles)}`);
     }
+    if (e.type === 'home') {
+      delay += 0.5;
+      const where = e.home === 'haunt' ? `haunt the ${ROOMS[PIECES[state.pieces[e.id].kind].room].name}` : `move${e.n === 1 ? 's' : ''} into the ${ROOMS[e.home].name}`;
+      const who = R.mobText(e.mob, e.n);
+      floater(at(e.id), who[0].toUpperCase() + who.slice(1), 'build', delay);
+      toast(`<b>${who[0].toUpperCase() + who.slice(1)}</b> ${where} · +${e.pts}${piecesText(e.tiles)}`);
+    }
     if (e.type === 'charter') toast(`Charter fulfilled: ${e.text} · <b>+${e.pts}</b>${piecesText(e.tiles)}`);
   }
   bump('score');
-  if (events.some((e) => e.type === 'room' || e.type === 'charter' || COMBOS[e.type])) bump('supply');
+  if (events.some((e) => e.type === 'room' || e.type === 'charter' || e.type === 'home' || COMBOS[e.type])) bump('supply');
 }
 
 // ---------- HUD ----------
@@ -482,9 +494,10 @@ let walking = false;
 let stick = null; // a thumb on a touch screen: { id, x0, y0, dx, dy } (dx, dy from -1 to 1)
 let look = null; // turning the view: a mouse drag, or two fingers
 
-function startWalk() {
-  if (walking || !state) return;
-  for (const id of ['menu', 'over', 'help']) $(id).hidden = true;
+// `dungeon`: the one to walk (the delve, or an adventure's).
+function startWalk(dungeon = state) {
+  if (walking || !dungeon) return;
+  for (const id of ['menu', 'over', 'help', 'advOver']) $(id).hidden = true;
   walking = true;
   held.clear();
   selected = null;
@@ -496,7 +509,7 @@ function startWalk() {
   document.body.classList.add('walking');
   $('walkbar').hidden = false;
   insets();
-  walker.start(state);
+  walker.start(dungeon);
   view.driver = (dt) => walker.update(dt, walkInput());
 }
 
@@ -521,15 +534,155 @@ function stopWalk(reframe = true) {
   }
 }
 
-walker.onEnter = (name, depth) => {
+walker.onEnter = (name, depth, id) => {
   $('walkWhere').textContent = name;
   $('walkDepth').textContent = depth === null ? '' : depth === 0 ? 'the way in' : `depth ${depth}`;
   bump('walkWhere');
+  if (adventure && fight.active) {
+    fight.reveal(id);
+    saveAdventure();
+  }
 };
 walker.onExit = () => {
+  if (adventure) {
+    const { gold } = fight;
+    leaveAdventure();
+    toast(`You climb out with <b>${gold} gold</b> · the adventure waits for you in the menu`);
+    return;
+  }
   stopWalk();
   toast('Back up the stairs');
 };
+
+// ---------- adventure ----------
+// Explore a dungeon in the dark and clear it of monsters, sword in hand: a new one dug from a
+// seed, or the delve itself. The delve stays as it is; an adventure saves apart.
+
+const fight = new Fight(view, walker, CELL);
+let adventure = null; // { seed, source: 'seed' | 'delve', dungeon, started }
+const ADVENTURE = PREFIX + 'adventure';
+
+function startAdventure({ seed, dungeon, source, saved }) {
+  stopWalk(false);
+  if (adventure) fight.stop();
+  if (!dungeon) {
+    toast('Digging the dungeon…');
+    dungeon = dig(seed);
+  }
+  adventure = { seed, source, dungeon, started: Date.now() - (saved?.time || 0) * 1000 };
+  view.clear();
+  view.sync(dungeon, { animate: false });
+  document.body.classList.add('adventure');
+  startWalk(dungeon);
+  fight.start(dungeon, populate(dungeon), saved);
+  view.driver = (dt) => {
+    // The menu or the help pauses the fight.
+    if (!$('menu').hidden || !$('help').hidden || !$('advOver').hidden) return walker.place(dt);
+    walker.update(dt, walkInput());
+    fight.update(dt);
+  };
+  saveAdventure();
+  if (!saved) toast(`<b>An adventure</b> · ${fight.total} monsters below · <kbd>Space</kbd> or a click to strike`);
+}
+
+// Out of an adventure without going back to the delve's view (a new game is about to show).
+function dropAdventure() {
+  if (!adventure) return;
+  saveAdventure();
+  fight.stop();
+  adventure = null;
+  document.body.classList.remove('adventure');
+}
+
+function leaveAdventure() {
+  if (!adventure) return;
+  saveAdventure();
+  fight.stop();
+  adventure = null;
+  document.body.classList.remove('adventure');
+  stopWalk(false);
+  view.clear();
+  view.sync(state, { animate: false });
+  view.frame(state);
+  onTurn();
+}
+
+function saveAdventure() {
+  if (!adventure || !fight.active) return;
+  store.set(ADVENTURE, JSON.stringify({
+    seed: adventure.seed, source: adventure.source,
+    dungeon: adventure.source === 'delve' ? adventure.dungeon : null,
+    saved: { ...fight.snapshot(), time: Math.round((Date.now() - adventure.started) / 1000) },
+  }));
+}
+
+function loadAdventure() {
+  try { return JSON.parse(store.get(ADVENTURE) || 'null'); } catch { return null; }
+}
+
+function continueAdventure() {
+  const a = loadAdventure();
+  if (!a) return;
+  $('menu').hidden = true;
+  startAdventure({ seed: a.seed, source: a.source, dungeon: a.dungeon, saved: a.saved });
+}
+
+function newAdventure(seed = randomSeed()) {
+  $('menu').hidden = true;
+  store.set(ADVENTURE, '');
+  startAdventure({ seed, source: 'seed' });
+}
+
+function adventureHere() {
+  $('menu').hidden = true;
+  $('over').hidden = true;
+  store.set(ADVENTURE, '');
+  startAdventure({ seed: state.seed, source: 'delve', dungeon: structuredClone(state) });
+}
+
+fight.onHud = ({ hp, max, gold, slain, total }) => {
+  $('advHearts').innerHTML = Array.from({ length: max }, (_, i) => `<i class="${i < hp ? 'full' : ''}"></i>`).join('');
+  $('advHearts').setAttribute('aria-label', `${hp} of ${max} hearts`);
+  $('advGold').textContent = gold;
+  $('advSlain').textContent = `${slain}/${total}`;
+};
+fight.onHurt = () => {
+  const el = $('hurt');
+  el.classList.remove('on');
+  void el.offsetWidth;
+  el.classList.add('on');
+};
+fight.onNews = (html) => toast(html);
+fight.onSave = () => saveAdventure();
+
+function adventureOver(won) {
+  fight.active = false; // nothing more to save
+  const minutes = Math.max(1, Math.round((Date.now() - adventure.started) / 60000));
+  const room = $('walkWhere').textContent;
+  const depth = $('walkDepth').textContent;
+  store.set(ADVENTURE, '');
+  const best = Math.max(Number(store.get(PREFIX + 'bestGold') || 0), fight.gold);
+  store.set(PREFIX + 'bestGold', String(best));
+  $('advOverTitle').textContent = won ? 'The dungeon is cleared' : 'You fell';
+  $('advOverText').textContent = won
+    ? `Every monster slain, in ${minutes} minute${minutes === 1 ? '' : 's'}.`
+    : `${fellIn(room)}${depth ? `, ${depth}` : ''}.`;
+  $('advOverStats').innerHTML = `<li>${fight.slain.size} of ${fight.total} monsters slain</li><li>${fight.gold} gold${best === fight.gold && fight.gold > 0 ? ' · your best yet' : ` · best ${best}`}</li>`;
+  $('bAdvRetry').hidden = won;
+  $('advOver').hidden = false;
+}
+// "In the crypt", "In a corridor", "On the stairs".
+function fellIn(name) {
+  const place = name.replace(/ ·.*/, '').replace(/ \(unfinished\)/, '').toLowerCase();
+  if (place === 'the stairs') return 'On the stairs';
+  return /^(a|an|the) /.test(place) ? `In ${place}` : `In the ${place}`;
+}
+fight.onVictory = () => adventureOver(true);
+fight.onDefeat = () => adventureOver(false);
+
+function strike() {
+  if (adventure && walking) fight.attack();
+}
 
 function walkInput() {
   const h = (...ks) => ks.some((k) => held.has(k));
@@ -566,8 +719,8 @@ function walkPointerDown(e) {
     showStick();
     return;
   }
-  // A mouse drag, or a second finger, turns the view.
-  look = { x: e.clientX, y: e.clientY, yaw: walker.cam.yaw, pitch: walker.cam.pitch, dist: walker.cam.dist, id: e.pointerId };
+  // A mouse drag, or a second finger, turns the view (a click without a drag strikes).
+  look = { x: e.clientX, y: e.clientY, yaw: walker.cam.yaw, pitch: walker.cam.pitch, dist: walker.cam.dist, id: e.pointerId, moved: false, button: e.button };
   if (pointers.size >= 2) {
     const [a, b] = [...pointers.values()];
     look.pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y), a0: Math.atan2(b.y - a.y, b.x - a.x) };
@@ -596,6 +749,7 @@ function walkPointerMove(e) {
     return;
   }
   if (e.pointerId !== look.id) return;
+  if (Math.hypot(e.clientX - look.x, e.clientY - look.y) > 5) look.moved = true;
   walker.cam.yaw = look.yaw - (e.clientX - look.x) * 0.008;
   walker.cam.pitch = look.pitch + (e.clientY - look.y) * 0.005;
 }
@@ -606,6 +760,7 @@ function walkPointerUp(e) {
     stick = null;
     showStick();
   }
+  if (look && e.pointerId === look.id && !look.moved && !look.pinch && look.button === 0 && e.pointerType === 'mouse') strike();
   if (look && (e.pointerId === look.id || pointers.size < 2)) look = null;
 }
 
@@ -738,7 +893,10 @@ canvas.addEventListener('wheel', (e) => {
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (walking) {
-    if (k === 'escape' || k === 'v') stopWalk();
+    if (adventure && (k === ' ' || k === 'j' || k === 'enter')) strike();
+    else if (adventure && k === 'escape') $('menu').hidden ? openMenu() : ($('menu').hidden = true);
+    else if (adventure) { if (WALK_KEYS.has(k)) held.add(k); else return; }
+    else if (k === 'escape' || k === 'v') stopWalk();
     else if (WALK_KEYS.has(k)) held.add(k);
     else if (k === '+' || k === '=') walker.cam.dist *= 0.85;
     else if (k === '-') walker.cam.dist /= 0.85;
@@ -824,6 +982,7 @@ async function importFile(file) {
     return;
   }
   const mode = sandbox() ? R.SANDBOX : undefined;
+  dropAdventure();
   stopWalk(false);
   state = importOPD(json, { mode });
   undoJSON = null;
@@ -904,13 +1063,15 @@ $('bPlace').onclick = () => placeOption(currentOption());
 $('bDiscard').onclick = discardTile;
 $('bUndo').onclick = undo;
 $('bCenter').onclick = () => view.frame(state);
-$('bWalk').onclick = startWalk;
-$('bWalkBack').onclick = () => stopWalk();
-$('bOverWalk').onclick = startWalk;
+$('bWalk').onclick = () => startWalk();
+$('bWalkBack').onclick = () => (adventure ? leaveAdventure() : stopWalk());
+$('bOverWalk').onclick = () => startWalk();
 $('bHelp').onclick = () => { $('help').hidden = false; };
 $('bHelpClose').onclick = () => { $('help').hidden = true; store.set(PREFIX + 'seenHelp', '1'); };
-$('bMenu').onclick = () => {
-  hud();
+function openMenu() {
+  if (!adventure) hud();
+  $('bAdventureContinue').hidden = !!adventure || !loadAdventure();
+  $('bAdventureLeave').hidden = !adventure;
   const sb = sandbox();
   $('bSandboxContinue').hidden = sb || !loadSaved(R.SANDBOX);
   $('bSandboxLeave').hidden = !sb;
@@ -919,7 +1080,19 @@ $('bMenu').onclick = () => {
   $('bSandbox').textContent = sb ? 'New sandbox' : 'Sandbox (choose every piece)';
   $('menuTitle').textContent = sb ? 'Sandbox' : 'Dungeon';
   $('menu').hidden = false;
-};
+}
+$('bMenu').onclick = openMenu;
+$('bAdvMenu').onclick = openMenu;
+$('bAttack').addEventListener('pointerdown', (e) => { e.preventDefault(); strike(); });
+$('bAdventure').onclick = () => newAdventure();
+$('bAdventureDaily').onclick = () => newAdventure(todaySeed());
+$('bAdventureHere').onclick = adventureHere;
+$('bOverAdventure').onclick = adventureHere;
+$('bAdventureContinue').onclick = continueAdventure;
+$('bAdventureLeave').onclick = () => { $('menu').hidden = true; leaveAdventure(); };
+$('bAdvRetry').onclick = () => { const { seed, source, dungeon } = adventure; $('advOver').hidden = true; store.set(ADVENTURE, ''); startAdventure({ seed, source, dungeon: source === 'delve' ? dungeon : null }); };
+$('bAdvNew').onclick = () => { $('advOver').hidden = true; newAdventure(); };
+$('bAdvBack').onclick = () => { $('advOver').hidden = true; leaveAdventure(); };
 $('bMenuClose').onclick = () => { $('menu').hidden = true; };
 $('bNew').onclick = () => { $('menu').hidden = true; startGame(randomSeed()); };
 $('bDaily').onclick = () => { $('menu').hidden = true; startGame(todaySeed()); };
@@ -963,7 +1136,7 @@ async function boot() {
   view.applyShift();
   if (!store.get(PREFIX + 'seenHelp')) $('help').hidden = false;
   view.start();
-  window.__opendelve = { get state() { return state; }, view, walker, startWalk, stopWalk, held, R, placeOption, rotate, pickPiece, enterSandbox, leaveSandbox, CELL, PIECES, importOPD, exportOPD, toGeoJSON, importFile };
+  window.__opendelve = { get state() { return state; }, view, walker, fight, get adventure() { return adventure; }, startWalk, stopWalk, held, R, placeOption, rotate, pickPiece, enterSandbox, leaveSandbox, CELL, PIECES, importOPD, exportOPD, toGeoJSON, importFile };
 }
 
 boot().catch((err) => {

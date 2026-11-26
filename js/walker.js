@@ -10,7 +10,7 @@ import { walkCells, spawn, stairsFrame, stairsDistance, stairsHeight, STAIRS, pl
 import { key, DX, DY, depths } from './rules.js';
 import { ROOMS } from './pieces.js';
 
-const RES = 8; // floor samples per cell side
+export const RES = 8; // floor samples per cell side
 const BLOCK_Y = 0.32; // anything standing higher than this (world units) is in the way
 const SPEED = { walk: 2.4, run: 4.8 }; // world units a second
 const STAIRS_HALF = 0.34; // half the stairway's width, in cells (the corridor walls, measured)
@@ -56,6 +56,8 @@ export class Walker {
     this.look.set(this.pos.x, this.pos.y + 0.9, this.pos.z);
     this.here = null;
     this.speed = 0;
+    this.busy = 0; // a swing or a fall playing: the legs wait
+    this.frozen = false; // down, in an adventure
     this.makeHero();
     this.bars = this.view.gates.children.filter((g) => g.userData.bars).map((g) => ({ gate: g, bars: g.userData.bars, lift: 0 }));
     this.active = true;
@@ -219,7 +221,7 @@ export class Walker {
     this.mixer = new THREE.AnimationMixer(hero);
     const clips = this.view.clips['character-human'] || [];
     this.actions = {};
-    for (const name of ['idle', 'walk', 'sprint']) {
+    for (const name of ['idle', 'walk', 'sprint', 'attack-melee-right', 'die', 'pick-up']) {
       const clip = clips.find((c) => c.name === name);
       if (clip) this.actions[name] = this.mixer.clipAction(clip);
     }
@@ -231,7 +233,36 @@ export class Walker {
     this.hero = hero;
   }
 
+  // An animation played once (a swing, a fall), over whatever the legs are doing. Returns how
+  // long it lasts.
+  oneShot(name, speed = 1) {
+    const a = this.actions[name];
+    if (!a) return 0;
+    a.reset();
+    a.setLoop(THREE.LoopOnce, 1);
+    a.clampWhenFinished = true;
+    a.timeScale = speed;
+    a.fadeIn(0.08).play();
+    if (this.anim && this.anim !== name) this.actions[this.anim].fadeOut(0.08);
+    this.anim = name;
+    this.busy = a.getClip().duration / speed;
+    return this.busy;
+  }
+
+  // Pushed (by a blow): as far as the floor allows.
+  knock(dx, dz) {
+    const from = this.cellOf(this.pos);
+    for (let k = 1; k > 0.1; k /= 2) {
+      if (this.free(this.pos.x + dx * k, this.pos.z + dz * k, from)) {
+        this.pos.x += dx * k;
+        this.pos.z += dz * k;
+        return;
+      }
+    }
+  }
+
   play(name) {
+    if (this.busy > 0) return;
     if (this.anim === name || !this.actions[name]) return;
     const next = this.actions[name];
     next.reset().setEffectiveWeight(1).fadeIn(0.18).play();
@@ -243,7 +274,7 @@ export class Walker {
     if (this.here === id) return;
     this.here = id;
     const p = this.state.pieces[id];
-    this.onEnter?.(placeName(this.state, p, ROOMS), this.depths[id] ?? null);
+    this.onEnter?.(placeName(this.state, p, ROOMS), this.depths[id] ?? null, id);
   }
 
   // ---------- each frame ----------
@@ -252,6 +283,14 @@ export class Walker {
   // speed, radians a second).
   update(dt, input) {
     if (!this.active) return;
+    if (this.busy > 0) {
+      this.busy -= dt;
+      if (this.busy <= 0 && !this.frozen && this.anim) {
+        this.actions[this.anim].fadeOut(0.15); // back to the legs' own animation
+        this.anim = null;
+      }
+    }
+    if (this.frozen) input = { x: 0, z: 0, turn: input.turn };
     const C = this.cam;
     C.yaw += (input.turn || 0) * dt;
     const fwd = { x: -Math.sin(C.yaw), z: -Math.cos(C.yaw) };
@@ -264,7 +303,7 @@ export class Walker {
       const len = Math.hypot(mx, mz);
       mx /= len;
       mz /= len;
-      const speed = (input.run ? SPEED.run : SPEED.walk) * mag;
+      const speed = (input.run ? SPEED.run : SPEED.walk) * mag * (this.busy > 0 ? 0.35 : 1);
       const step = speed * dt;
       const from = this.cellOf(this.pos);
       const nx = this.pos.x + mx * step;
