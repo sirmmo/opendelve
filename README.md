@@ -92,7 +92,7 @@ elsewhere.
 | Move the view | drag, or `WASD` / arrows | drag |
 | Rotate the view | right drag, `Q` / `E` | twist with two fingers |
 | Zoom | wheel, `+` / `-` | pinch |
-| Undo, discard, center | `Z`, `X`, `C` | ↶ and ⌖ buttons, *Discard* |
+| Undo, discard, center | `Z`, `X`, `C` | ↶ and crosshair buttons, *Discard* |
 | Sandbox: choose a piece | click it in the tray, `[` / `]` | tap it in the tray (swipe to see more) |
 | Sandbox: stone or cave | `T`, *Stone* / *Cave* | *Stone* / *Cave* |
 
