@@ -49,6 +49,12 @@ works. The sandbox has its own save, so it never overwrites your delve: *Back to
 *Continue the sandbox* switch between them (`?mode=sandbox` opens it). A One Page Dungeon map
 imported while in the sandbox becomes a sandbox too.
 
+**Walk the dungeon.** The walking figure at the top right (or `V`, or *Walk the dungeon* when
+the delve is over) puts an adventurer at the foot of the stairs, with a torch and a camera that
+follows. Walk anywhere you dug: through joined doors, around the columns, tables and ruins, into
+the treasure rooms, whose bars lift as you come up to them. A label names the room you are in
+and its depth. Climb back up the stairs (or press `Esc`) to dig again.
+
 Every dungeon has a seed; the same seed always deals the same pieces. Share one from the menu,
 or play *Today's dungeon*. The game saves after every move, and the last move can be undone.
 
@@ -95,6 +101,10 @@ elsewhere.
 | Undo, discard, center | `Z`, `X`, `C` | ↶ and crosshair buttons, *Discard* |
 | Sandbox: choose a piece | click it in the tray, `[` / `]` | tap it in the tray (swipe to see more) |
 | Sandbox: stone or cave | `T`, *Stone* / *Cave* | *Stone* / *Cave* |
+| Walk the dungeon | walking figure, `V` | walking figure |
+| Walk, run | `WASD` / arrows, hold `Shift` to run | a thumb anywhere: push further to run |
+| Turn the view while walking | drag, `Q` / `E`; wheel to zoom | two fingers: twist and pinch |
+| Stop walking | up the stairs, `Esc`, `V`, *Back to digging* | up the stairs, *Back to digging* |
 
 ## Development
 
@@ -102,7 +112,7 @@ Plain HTML, CSS and JavaScript modules. No build step and no dependencies at run
 
 ```sh
 python3 -m http.server 8000      # then open http://localhost:8000
-npm test                          # rules, map import/export tests (Node 20+)
+npm test                          # rules, walking, map import/export tests (Node 20+)
 OPD_SAMPLE=map.json npm test      # also check a real One Page Dungeon export
 node tools/balance.mjs 1 2 3      # greedy games per seed: length, score, rooms
 ```
@@ -115,7 +125,9 @@ node tools/balance.mjs 1 2 3      # greedy games per seed: length, score, rooms
 | `js/view.js` | three.js dungeon, gates, room furniture, ghost piece, hand and tray thumbnails |
 | `js/opd.js` | One Page Dungeon JSON import and export |
 | `js/geojson.js`, `js/geo.js` | GeoJSON export: projection and merging cells into outlines |
-| `js/main.js` | Input, HUD, sandbox tray, saving, undo, file import and downloads |
+| `js/walk.js` | Walking, the pure part: which sides of each cell lead on (joined doors), where a walk starts, the stairs' ramp |
+| `js/walker.js` | Walking in 3D: a top-down height map of the laid pieces (drawn once on the GPU) for what is in the way, the animated adventurer, the follow camera, the lifting bars |
+| `js/main.js` | Input, HUD, sandbox tray, walking controls, saving, undo, file import and downloads |
 | `tools/ports.py` | Measures each Kenney piece's footprint and doors from its mesh (`tools/glb.py` reads GLB) |
 | `models/` | The models the game uses: Kenney's `dungeon/`, `cave/` and `props/`, KayKit's `treasure/`, each with its texture, and Quaternius' `ruins/` (GLB, material colours, repainted in the Kenney palette at load) |
 

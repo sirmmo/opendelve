@@ -1,4 +1,5 @@
 import { View, CELL, pieceCenter, centerOf } from './view.js';
+import { Walker } from './walker.js';
 import { importOPD, exportOPD, isOPD } from './opd.js';
 import { toGeoJSON } from './geojson.js';
 import * as R from './rules.js';
@@ -48,6 +49,7 @@ function setURL(seed) {
 const sandbox = () => !!state && R.isSandbox(state);
 
 function startGame(seed, mode) {
+  stopWalk(false);
   state = R.newGame(seed, { mode });
   undoJSON = null;
   selected = null;
@@ -63,6 +65,7 @@ function startGame(seed, mode) {
 }
 
 function resume(saved, undo) {
+  stopWalk(false);
   state = saved;
   undoJSON = undo || null;
   seenCharters = new Set(state.charters.map((c) => c.id));
@@ -266,6 +269,10 @@ const piecesText = (n) => (sandbox() || !n ? '' : ` · +${n} piece${n === 1 ? ''
 // Tell the view how much of the screen the HUD covers at the top and the bottom.
 function insets() {
   if ($('hud').hidden) return;
+  if (walking) {
+    view.setInsets(0, 0);
+    return;
+  }
   const top = Math.max($('scorecard').getBoundingClientRect().bottom, $('charters').getBoundingClientRect().bottom);
   const bottom = $('palette').hidden ? $('hand').getBoundingClientRect().top : $('palette').getBoundingClientRect().top;
   view.setInsets(top, window.innerHeight - bottom);
@@ -464,6 +471,144 @@ function showOver() {
   $('over').hidden = false;
 }
 
+// ---------- walking ----------
+// Walk the dungeon as an adventurer: WASD or the arrows (or a stick under the thumb), Shift to
+// run, Q/E or a drag to turn the view. Up the stairs, or V, or Esc, to dig again.
+
+const walker = new Walker(view, CELL);
+const WALK_KEYS = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'q', 'e', 'shift']);
+const held = new Set();
+let walking = false;
+let stick = null; // a thumb on a touch screen: { id, x0, y0, dx, dy } (dx, dy from -1 to 1)
+let look = null; // turning the view: a mouse drag, or two fingers
+
+function startWalk() {
+  if (walking || !state) return;
+  for (const id of ['menu', 'over', 'help']) $(id).hidden = true;
+  walking = true;
+  held.clear();
+  selected = null;
+  hover = null;
+  view.setGhost(null);
+  view.markers.visible = false;
+  $('tip').hidden = true;
+  view.camGoal = null;
+  document.body.classList.add('walking');
+  $('walkbar').hidden = false;
+  insets();
+  walker.start(state);
+  view.driver = (dt) => walker.update(dt, walkInput());
+}
+
+// `reframe`: look over the whole dungeon again (not when a new one is about to be shown).
+function stopWalk(reframe = true) {
+  if (!walking) return;
+  walking = false;
+  walker.stop();
+  view.driver = null;
+  view.markers.visible = true;
+  held.clear();
+  stick = null;
+  look = null;
+  $('stick').hidden = true;
+  $('walkbar').hidden = true;
+  document.body.classList.remove('walking');
+  insets();
+  if (reframe) {
+    view.cam.target.copy(walker.pos).setY(0);
+    view.frame(state);
+    refreshGhost();
+  }
+}
+
+walker.onEnter = (name, depth) => {
+  $('walkWhere').textContent = name;
+  $('walkDepth').textContent = depth === null ? '' : depth === 0 ? 'the way in' : `depth ${depth}`;
+  bump('walkWhere');
+};
+walker.onExit = () => {
+  stopWalk();
+  toast('Back up the stairs');
+};
+
+function walkInput() {
+  const h = (...ks) => ks.some((k) => held.has(k));
+  let x = (h('d', 'arrowright') ? 1 : 0) - (h('a', 'arrowleft') ? 1 : 0);
+  let z = (h('w', 'arrowup') ? 1 : 0) - (h('s', 'arrowdown') ? 1 : 0);
+  if (stick) {
+    x += stick.dx;
+    z -= stick.dy;
+  }
+  const turn = (h('q') ? 1.9 : 0) - (h('e') ? 1.9 : 0);
+  const run = h('shift') || (!!stick && Math.hypot(stick.dx, stick.dy) > 0.95);
+  return { x, z, run, turn, steer: !look && !turn };
+}
+
+window.addEventListener('keyup', (e) => held.delete(e.key.toLowerCase()));
+window.addEventListener('blur', () => held.clear());
+
+const STICK_R = 56; // px: a full push of the thumb
+
+function showStick() {
+  const el = $('stick');
+  el.hidden = !stick;
+  if (!stick) return;
+  el.style.left = stick.x0 + 'px';
+  el.style.top = stick.y0 + 'px';
+  el.firstElementChild.style.transform = `translate(${stick.dx * STICK_R}px, ${stick.dy * STICK_R}px)`;
+}
+
+function walkPointerDown(e) {
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* a pointer the browser no longer tracks */ }
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (e.pointerType === 'touch' && !stick && pointers.size === 1) {
+    stick = { id: e.pointerId, x0: e.clientX, y0: e.clientY, dx: 0, dy: 0 };
+    showStick();
+    return;
+  }
+  // A mouse drag, or a second finger, turns the view.
+  look = { x: e.clientX, y: e.clientY, yaw: walker.cam.yaw, pitch: walker.cam.pitch, dist: walker.cam.dist, id: e.pointerId };
+  if (pointers.size >= 2) {
+    const [a, b] = [...pointers.values()];
+    look.pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y), a0: Math.atan2(b.y - a.y, b.x - a.x) };
+  }
+}
+
+function walkPointerMove(e) {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (stick && e.pointerId === stick.id) {
+    let dx = (e.clientX - stick.x0) / STICK_R;
+    let dy = (e.clientY - stick.y0) / STICK_R;
+    const m = Math.hypot(dx, dy);
+    if (m > 1) { dx /= m; dy /= m; }
+    stick.dx = dx;
+    stick.dy = dy;
+    showStick();
+    return;
+  }
+  if (!look) return;
+  if (look.pinch && pointers.size >= 2) {
+    const ps = [...pointers.entries()].filter(([id]) => !stick || id !== stick.id).map(([, p]) => p);
+    const [a, b] = ps.length >= 2 ? ps : [...pointers.values()];
+    walker.cam.dist = look.dist * (look.pinch.d0 / Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1));
+    walker.cam.yaw = look.yaw - (Math.atan2(b.y - a.y, b.x - a.x) - look.pinch.a0);
+    return;
+  }
+  if (e.pointerId !== look.id) return;
+  walker.cam.yaw = look.yaw - (e.clientX - look.x) * 0.008;
+  walker.cam.pitch = look.pitch + (e.clientY - look.y) * 0.005;
+}
+
+function walkPointerUp(e) {
+  pointers.delete(e.pointerId);
+  if (stick && e.pointerId === stick.id) {
+    stick = null;
+    showStick();
+  }
+  if (look && (e.pointerId === look.id || pointers.size < 2)) look = null;
+}
+
 // ---------- input ----------
 
 const canvas = $('scene');
@@ -483,6 +628,7 @@ function setTouch(on) {
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 canvas.addEventListener('pointerdown', (e) => {
+  if (walking) return walkPointerDown(e);
   setTouch(e.pointerType === 'touch');
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -506,6 +652,7 @@ function panTo(ground, x, y) {
 }
 
 canvas.addEventListener('pointermove', (e) => {
+  if (walking) return walkPointerMove(e);
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pinch && pointers.size >= 2) {
     const [a, b] = [...pointers.values()];
@@ -539,6 +686,7 @@ canvas.addEventListener('pointermove', (e) => {
 });
 
 function endPointer(e) {
+  if (walking) return walkPointerUp(e);
   if (!pointers.has(e.pointerId)) return;
   const wasTap = drag && !drag.moved && pointers.size === 1;
   pointers.delete(e.pointerId);
@@ -557,7 +705,7 @@ function endPointer(e) {
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
 canvas.addEventListener('pointerleave', () => {
-  if (!touchMode && !drag) {
+  if (!touchMode && !drag && !walking) {
     hover = null;
     refreshGhost();
   }
@@ -579,12 +727,25 @@ function tap(c) {
 
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
+  if (walking) {
+    walker.cam.dist *= Math.exp(e.deltaY * 0.0012);
+    return;
+  }
   view.camGoal = null;
   view.cam.dist *= Math.exp(e.deltaY * 0.0012);
 }, { passive: false });
 
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
+  if (walking) {
+    if (k === 'escape' || k === 'v') stopWalk();
+    else if (WALK_KEYS.has(k)) held.add(k);
+    else if (k === '+' || k === '=') walker.cam.dist *= 0.85;
+    else if (k === '-') walker.cam.dist /= 0.85;
+    else return;
+    e.preventDefault();
+    return;
+  }
   if (k === 'escape') {
     $('help').hidden = true;
     $('menu').hidden = true;
@@ -609,6 +770,7 @@ window.addEventListener('keydown', (e) => {
   else if (k === ']') cyclePiece(1);
   else if (k === 't') toggleStyle();
   else if (k === 'c') view.frame(state);
+  else if (k === 'v') startWalk();
   else if (k === 'h' || k === '?') $('help').hidden = false;
   else if (k === 'q') view.cam.yaw += 0.3;
   else if (k === 'e') view.cam.yaw -= 0.3;
@@ -662,6 +824,7 @@ async function importFile(file) {
     return;
   }
   const mode = sandbox() ? R.SANDBOX : undefined;
+  stopWalk(false);
   state = importOPD(json, { mode });
   undoJSON = null;
   selected = null;
@@ -741,6 +904,9 @@ $('bPlace').onclick = () => placeOption(currentOption());
 $('bDiscard').onclick = discardTile;
 $('bUndo').onclick = undo;
 $('bCenter').onclick = () => view.frame(state);
+$('bWalk').onclick = startWalk;
+$('bWalkBack').onclick = () => stopWalk();
+$('bOverWalk').onclick = startWalk;
 $('bHelp').onclick = () => { $('help').hidden = false; };
 $('bHelpClose').onclick = () => { $('help').hidden = true; store.set(PREFIX + 'seenHelp', '1'); };
 $('bMenu').onclick = () => {
@@ -797,7 +963,7 @@ async function boot() {
   view.applyShift();
   if (!store.get(PREFIX + 'seenHelp')) $('help').hidden = false;
   view.start();
-  window.__opendelve = { get state() { return state; }, view, R, placeOption, rotate, pickPiece, enterSandbox, leaveSandbox, CELL, PIECES, importOPD, exportOPD, toGeoJSON, importFile };
+  window.__opendelve = { get state() { return state; }, view, walker, startWalk, stopWalk, held, R, placeOption, rotate, pickPiece, enterSandbox, leaveSandbox, CELL, PIECES, importOPD, exportOPD, toGeoJSON, importFile };
 }
 
 boot().catch((err) => {

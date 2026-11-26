@@ -37,6 +37,7 @@
   <div id="noteLabels"></div>
 
   <div id="topright">
+    <button class="icon" id="bWalk" title="Walk the dungeon (V)" aria-label="Walk the dungeon"><svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><circle class="dot" cx="13.5" cy="3.6" r="2.1"/><path d="M12.8 8.2l-3 3.4 1.2 4.4M12.8 8.2l2.3 4.3 3.4 1M11 16l-2.6 5.6M11 16l3.2 2 1 4M9.8 11.6l-3.6 1.2"/></svg></button>
     <button class="icon" id="bUndo" title="Undo (Z)" aria-label="Undo">↶</button>
     <button class="icon" id="bCenter" title="Center the view (C)" aria-label="Center the view"><svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M12 1.5v6M12 16.5v6M1.5 12h6M16.5 12h6"/><circle class="dot" cx="12" cy="12" r="1.6"/></svg></button>
     <button class="icon" id="bHelp" title="How to play (H)" aria-label="How to play">?</button>
@@ -65,6 +66,14 @@
     </div>
   </div>
 
+  <div id="walkbar" class="card" hidden>
+    <div class="where"><b id="walkWhere"></b><span id="walkDepth"></span></div>
+    <div class="hint keys"><kbd>WASD</kbd> walk · <kbd>Shift</kbd> run · <kbd>Q</kbd> <kbd>E</kbd> or drag to turn the view · up the stairs to dig again</div>
+    <div class="hint thumbs">Thumb anywhere to walk, push further to run · two fingers turn the view</div>
+    <button class="btn" id="bWalkBack">Back to digging</button>
+  </div>
+  <div id="stick" hidden><i></i></div>
+
   <div id="tip" hidden></div>
   <div id="toasts"></div>
 </div>
@@ -86,6 +95,7 @@
       <div><b>Mouse</b> · click a glowing square to lay · <kbd>R</kbd> or right click for the next way it fits · drag to move · right drag to rotate the view · wheel to zoom</div>
       <div><b>Touch</b> · tap a spot, tap again to lay · ⟲ ⟳ for the next way it fits · drag, pinch and twist the view</div>
       <div><b>Keys</b> · <kbd>Z</kbd> undo · <kbd>X</kbd> discard · <kbd>C</kbd> center · <kbd>Q</kbd>/<kbd>E</kbd> rotate the view · <kbd>WASD</kbd> move</div>
+      <div><b>Walk</b> · the walking figure (or <kbd>V</kbd>) puts an adventurer at the foot of the stairs · <kbd>WASD</kbd> or a thumb to walk, <kbd>Shift</kbd> to run · climb the stairs, or <kbd>Esc</kbd>, to dig again</div>
       <div><b>Sandbox</b> · click or tap a piece in the tray · <kbd>[</kbd> <kbd>]</kbd> previous and next piece · <kbd>T</kbd> stone or cave</div>
     </div>
     <button class="btn" id="bHelpClose">Start digging</button>
@@ -127,6 +137,7 @@
     <button class="btn alt" id="bOverRestart">Dig this seed again</button>
     <button class="btn alt" id="bOverOPD">Export as One Page Dungeon JSON</button>
     <button class="btn alt" id="bOverGeo">Download map (GeoJSON)</button>
+    <button class="btn alt" id="bOverWalk">Walk the dungeon</button>
     <button class="btn ghost" id="bOverLook">Look at the dungeon</button>
   </div>
 </div>

@@ -249,3 +249,28 @@ body.dragging::after {
   content: 'Drop a One Page Dungeon map to import it'; position: fixed; inset: 12px; border: 4px dashed var(--gold); border-radius: 20px;
   display: flex; align-items: center; justify-content: center; color: var(--paper); font-size: 24px; font-weight: 700; background: rgba(10, 8, 16, .6); z-index: 30;
 }
+
+/* walking: the build HUD makes way for a bar naming where you are, and a stick under the thumb */
+body.walking #hand, body.walking #palette, body.walking #tip, body.walking #charters, body.walking #lore,
+body.walking #topright, body.walking #noteLabels, body.walking #floaters { display: none !important; }
+#walkbar {
+  position: absolute; left: 50%; bottom: calc(12px + var(--safe-b)); transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 16px 12px;
+  width: max-content; max-width: calc(100vw - 24px); text-align: center;
+}
+#walkbar .where { display: flex; align-items: baseline; gap: 10px; }
+#walkbar .where b { font-family: 'Cinzel', serif; font-weight: 900; font-size: 20px; }
+#walkbar .where b.bump { animation: bump .45s; }
+#walkbar .where span { font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--ink-soft); font-weight: 600; }
+#walkbar .hint { font-size: 13px; color: var(--ink-soft); }
+#walkbar .thumbs, body.touch #walkbar .keys { display: none; }
+body.touch #walkbar .thumbs { display: block; }
+#walkbar .btn { margin: 2px 0 0; padding: 6px 16px; font-size: 15px; width: auto; }
+#stick {
+  position: fixed; width: 112px; height: 112px; margin: -56px 0 0 -56px; border-radius: 50%; pointer-events: none;
+  border: 3px solid rgba(239, 230, 212, .55); background: rgba(34, 27, 46, .28);
+}
+#stick i {
+  position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%;
+  background: var(--paper); border: 3px solid var(--ink); box-shadow: var(--shadow);
+}

@@ -207,7 +207,9 @@ export class View {
     this.views = new Map();
     this.anims = [];
     this.templates = {};
+    this.clips = {}; // animations, by model (the characters walk)
     this.offsets = {};
+    this.driver = null; // while walking, moves the camera instead of the orbit (js/walker.js)
     this.ghost = null;
     this.ghostKey = '';
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -262,6 +264,7 @@ export class View {
         this.offsets[name] = new THREE.Vector3(Math.round(c.x / 2) * 2, 0, Math.round(c.z / 2) * 2);
       }
       this.templates[name] = gltf.scene;
+      if (gltf.animations?.length) this.clips[name] = gltf.animations;
       onProgress?.(++done / jobs.length);
     }));
     this.thumbs = new Thumbs(this);
@@ -413,6 +416,8 @@ export class View {
         gate.scale.setScalar(MODEL_SCALE);
         gate.position.set((x + 0.5 + DX[d] * 0.5) * CELL, 0, (y + 0.5 + DY[d] * 0.5) * CELL);
         gate.rotation.y = d % 2 === 0 ? Math.PI / 2 : 0;
+        // The bars are their own part of the model: a walker lifts them (js/walker.js).
+        if (p.treasure) gate.userData.bars = gate.getObjectByName('gate');
         this.gates.add(gate);
       }
     }
@@ -628,7 +633,7 @@ export class View {
         this.shift = Math.abs(d) < 0.5 ? this.shiftGoal : this.shift + d * (1 - Math.exp(-dt * 8));
         this.applyShift();
       }
-      if (this.camGoal) {
+      if (this.camGoal && !this.driver) {
         const g = this.camGoal;
         const f = 1 - Math.exp(-dt * 5);
         this.cam.target.lerp(g.target, f);
@@ -637,7 +642,8 @@ export class View {
       }
       if (this.ghost?.visible) this.ghost.position.y = 0.25 + Math.sin(now * 3) * 0.08;
       this.markerMat.opacity = 0.2 + Math.sin(now * 2.5) * 0.08;
-      this.updateCamera();
+      if (this.driver) this.driver(dt);
+      else this.updateCamera();
       this.onFrame?.(dt);
       this.renderer.render(this.scene, this.camera);
     };
